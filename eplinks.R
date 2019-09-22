@@ -8,6 +8,7 @@
 #   install.packages("BiocManager")
 # BiocManager::install("genomeIntervals")
 library(genomeIntervals)
+library(tidyverse)
 library(dplyr)
 library(tidyr)
 library(fuzzyjoin)
@@ -45,16 +46,21 @@ e_all_rob <- unique(data_enhancers_rob$enhancer) #all robust enhancers
 e_all_per <- unique(data_enhancers_per$enhancer) #all permissive enhancers
 all(e_all_rob %in% e_all_per) #robust enhancers are included in permissive ones
 
-enhancers_check_result <- nrow(data_enhancers_per %>% 
-                                 genome_inner_join(data_enhancers_per, 
-                                                   by = c("chromosome", "start", "end")) %>%
-                                 filter(start.x != start.y | end.x != end.y) %>% 
-                                 filter(start.x != end.y & start.y != end.x)
-                               ) # due to bed file interval format (,]
-print(ifelse(enhancers_check_result, 
-             "there is overlap between enhancers", 
-             "no overlap between enhancers"))
-# so there is no overlap between enhancers, which is good
+data_enhancers_plot <- data_enhancers_per %>%
+  mutate(length = end - start)
+ggplot(data_enhancers_plot, aes(x = length)) +
+  geom_histogram(fill = "lightblue", alpha = 0.7, boundary = 0) +
+  labs(x = "enhancer length") +
+  theme_bw()
+sum(data_enhancers_plot %>% pull(length))/(3*10^9) #percent of whole genome that are enhancers
+
+enhancers_check_result <- data_enhancers_per %>% 
+  genome_inner_join(data_enhancers_per, 
+                    by = c("chromosome", "start", "end")) %>% 
+  filter(start.x != start.y | end.x != end.y) %>% #exclude self
+  filter(start.x != end.y & start.y != end.x) #due to bed file interval format (,]
+print(ifelse(nrow(enhancers_check_result) == 0, 
+             "no overlap between enhancers", "there is overlap between enhancers"))
 
 refseq_info_split <- strsplit(as.character(data_association_refseq$V4), split = ";")
 e_eplinks_refseq <- unlist(lapply(refseq_info_split, `[[`, 1))
@@ -155,6 +161,12 @@ pelinks_sameTSS <- tss_refseq %>%
 # A histogram showing the number of enhancers each tss is associated with
 setwd(output.path)
 png(file = "ep_hist.png", width = 1200, height = 800, res = 160)
+ggplot(pelinks_sameTSS, aes(x = e_count)) +
+  geom_bar(fill = "lightblue", alpha = 0.7) + 
+  scale_x_continuous(limits = c(-1,41)) +
+  labs(x = "number of enhancers per tss") +
+  theme_bw()
+
 y <- hist(pelinks_sameTSS$e_count)
 plot(y, ylim=c(0, max(y$counts)+500), main = "Number of enhancers per RefSeq TSS",
      xlab = "Number of enhancers")
@@ -262,6 +274,7 @@ pelinks_sameTSS_complete <- pelinks_sameTSS %>%
 
 promoters_associated <- pelinks_sameTSS_complete %>% select(tss, promoter)
 enhancers_associated <- pelinks_sameTSS_complete %>% select(tss, enhancer)
+
 
 # ## Part 4. Annotate the coding exons for each TSS
 # setwd(refseq.path)
