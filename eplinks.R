@@ -46,13 +46,18 @@ e_all_rob <- unique(data_enhancers_rob$enhancer) #all robust enhancers
 e_all_per <- unique(data_enhancers_per$enhancer) #all permissive enhancers
 all(e_all_rob %in% e_all_per) #robust enhancers are included in permissive ones
 
+# a histogram showing the distribution of enhancer length
+setwd(output.path)
 data_enhancers_plot <- data_enhancers_per %>%
   mutate(length = end - start)
+png(file = "e_length.png", width = 1200, height = 800, res = 160)
 ggplot(data_enhancers_plot, aes(x = length)) +
   geom_histogram(fill = "lightblue", alpha = 0.7, boundary = 0) +
   labs(x = "enhancer length") +
   theme_bw()
-sum(data_enhancers_plot %>% pull(length))/(3*10^9) #percent of whole genome that are enhancers
+dev.off()
+# about 0.4% of the whole genome that are enhancers defined by the paper
+sum(data_enhancers_plot %>% pull(length))/(3*10^9) 
 
 enhancers_check_result <- data_enhancers_per %>% 
   genome_inner_join(data_enhancers_per, 
@@ -160,17 +165,16 @@ pelinks_sameTSS <- tss_refseq %>%
 
 # A histogram showing the number of enhancers each tss is associated with
 setwd(output.path)
+pelinks_plot <- pelinks_sameTSS %>%
+  mutate(category = cut(e_count, breaks = c(0, 5, 10, 15, 20, Inf), right = F)) %>%
+  group_by(category) %>%
+  summarise(count = n())
 png(file = "ep_hist.png", width = 1200, height = 800, res = 160)
-ggplot(pelinks_sameTSS, aes(x = e_count)) +
-  geom_bar(fill = "lightblue", alpha = 0.7) + 
-  scale_x_continuous(limits = c(-1,41)) +
+ggplot(pelinks_plot, aes(x = category, y = count)) +
+  geom_bar(stat = "identity", fill = "lightblue", alpha = 0.7, width = 0.5) + 
+  geom_text(aes(label = count), nudge_y = 500) +
   labs(x = "number of enhancers per tss") +
   theme_bw()
-
-y <- hist(pelinks_sameTSS$e_count)
-plot(y, ylim=c(0, max(y$counts)+500), main = "Number of enhancers per RefSeq TSS",
-     xlab = "Number of enhancers")
-text(y$mids, y$counts+500, y$counts, cex=0.75)
 dev.off()
 
 
