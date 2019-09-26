@@ -1,5 +1,5 @@
 ### In this code, we use primarily the enhancer-tss association file
-### from the Fantom project to build a pelinks_sameTSS file. 
+### from the Fantom project to build a promoter-enhancer links file. 
 ### This new file gives for each TSS, all the promoter and enhancer regions 
 ### associatited with it.
 
@@ -15,10 +15,9 @@ library(fuzzyjoin)
 library(gtools)
 
 # input path
-home.path <- getwd()
+home.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks" # set home directory
 fantom.path <- paste0(home.path, "/FANTOM")
 refseq.path <- paste0(home.path, "/RefSeq")
-processed.path <- paste0(home.path, "/Processed")
 
 # output path
 output.path <- home.path
@@ -50,14 +49,15 @@ all(e_all_rob %in% e_all_per) #robust enhancers are included in permissive ones
 setwd(output.path)
 data_enhancers_plot <- data_enhancers_per %>%
   mutate(length = end - start)
-png(file = "e_length.png", width = 1200, height = 800, res = 160)
+png(file = "enhancer_length_dist.png", width = 1200, height = 800, res = 160)
 ggplot(data_enhancers_plot, aes(x = length)) +
   geom_histogram(fill = "lightblue", alpha = 0.7, boundary = 0) +
   labs(x = "enhancer length") +
   theme_bw()
 dev.off()
-# about 0.4% of the whole genome that are enhancers defined by the paper
-sum(data_enhancers_plot %>% pull(length))/(3*10^9) 
+# about 0.4% of the whole genome are enhancers defined by the paper
+mean(data_enhancers_plot$length)
+sum(data_enhancers_plot$length)/(3*10^9) 
 
 enhancers_check_result <- data_enhancers_per %>% 
   genome_inner_join(data_enhancers_per, 
@@ -163,13 +163,13 @@ pelinks_sameTSS <- tss_refseq %>%
   ungroup() %>%
   mutate(e_count = ifelse(is.na(enhancer), 0, sapply(strsplit(enhancer, ";"), length)))
 
-# A histogram showing the number of enhancers each tss is associated with
+# A bar plot showing the number of enhancers each tss is associated with
 setwd(output.path)
 pelinks_plot <- pelinks_sameTSS %>%
   mutate(category = cut(e_count, breaks = c(0, 5, 10, 15, 20, Inf), right = F)) %>%
   group_by(category) %>%
   summarise(count = n())
-png(file = "ep_hist.png", width = 1200, height = 800, res = 160)
+png(file = "enhancers_per_tss.png", width = 1200, height = 800, res = 160)
 ggplot(pelinks_plot, aes(x = category, y = count)) +
   geom_bar(stat = "identity", fill = "lightblue", alpha = 0.7, width = 0.5) + 
   geom_text(aes(label = count), nudge_y = 500) +
@@ -279,19 +279,7 @@ pelinks_sameTSS_complete <- pelinks_sameTSS %>%
 promoters_associated <- pelinks_sameTSS_complete %>% select(tss, promoter)
 enhancers_associated <- pelinks_sameTSS_complete %>% select(tss, enhancer)
 
-
-# ## Part 4. Annotate the coding exons for each TSS
-# setwd(refseq.path)
-# refseq_codingexons <- 
-#   as_tibble(read.table("refseq_codingexons_171007.bed", sep = "\t")) %>%
-#   select(V1, V2, V3, V4) %>%
-#   rename(chromosome = V1, start = V2, end = V3, tss = V4) %>%
-#   arrange(chromosome, start, end, tss) %>%
-#   distinct() %>%
-#   mutate(tss = gsub("_cds.*$", "", tss))
-
 ## Output the result: TSS, promoter, enhancer, coding exons, etc.
 setwd(output.path)
-write.table(pelinks_sameTSS_complete, "pelinks.txt", quote = F, row.names = F)
 write.csv(pelinks_sameTSS_complete, "pelinks.csv", quote = F, row.names = F)
 
