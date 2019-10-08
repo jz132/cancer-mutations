@@ -1,0 +1,73 @@
+---
+title: "Understanding Simple Somatic Mutations on ICGC"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(fuzzyjoin)
+```
+
+There is a huge amount of data on ICGC. The data we are most interested in for our somatic cancer mutations research are the simple somatic mutations (SSM) files. Here I want to write a document to show what information these files include, and how to understand the numbers reported on the ICGC website.
+
+### Get the data
+The data can be downloaded from ICGC data portal at https://dcc.icgc.org/releases/current/Projects/. The SSM files all start with "simple_somatic_mutation".
+
+After downloading the data, we read them into R. The columns to include are set by the `keep_cols` variable.
+
+```{r import data, message=FALSE}
+icgc.data.path <- "/Users/jz132/Desktop/Gordanlab/Data/ICGC"
+filename <- "simple_somatic_mutation.open.BRCA-FR.tsv"
+
+keep_cols <- c("icgc_mutation_id", 
+               "icgc_donor_id", 
+               "chromosome",
+               "chromosome_start",
+               "chromosome_end",
+               "assembly_version",
+               "mutation_type",
+               "reference_genome_allele",
+               "mutated_from_allele",
+               "mutated_to_allele",
+               "consequence_type",
+               "gene_affected",
+               "transcript_affected",
+               "sequencing_strategy")
+
+setwd(icgc.data.path)
+data_icgc_try <- read_tsv(filename, col_names = T, n_max = 5)
+col_indicator <- paste(ifelse(colnames(data_icgc_try) %in% keep_cols, "?", "-"), 
+                       collapse = "")
+
+data_icgc_raw <- read_tsv(filename,
+                          col_names = T, col_types = col_indicator) %>%
+  mutate(chromosome = paste0("chr", chromosome))
+```
+
+The column `consequence_type` is annotated by [Snpeff](http://snpeff.sourceforge.net/SnpEff.html). We can infer whether the mutation is in exome or not from it. One thing to note here is that some mutations are annotated as `r NA` and should be excluded from the analysis.
+
+```{r}
+all_types <- data_icgc_raw %>% distinct(consequence_type) %>% pull()
+nonexome <- c("intron_variant", "intragenic_variant", "upstream_gene_variant", 
+              "downstream_gene_variant", "intergenic_region")
+exome <- setdiff(all_types, c(nonexome, NA))
+```
+
+### Numbers on ICGC
+
+We can then reproduce some numbers on the [ICGC cancer projects page](https://dcc.icgc.org/projects):
+
+```{r}
+data_icgc_raw %>% distinct(icgc_donor_id) %>% nrow() # total number of donors
+data_icgc_raw %>% filter(consequence_type %in% exome) %>% 
+  distinct(icgc_donor_id, icgc_mutation_id) %>% nrow() # total number of exome mutations
+data_icgc_in_exome_by_donor <- data_icgc_raw %>%
+  filter(consequence_type %in% exome) %>%
+  group_by(icgc_donor_id) %>%
+  summarise(n_mutation = n_distinct(icgc_mutation_id))
+appr_exome_len <- 3*10^7
+# median number of exome mutations per mb
+median(data_icgc_in_exome_by_donor$n_mutation)*10^6/appr_exome_len  
+```
+

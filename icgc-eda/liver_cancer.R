@@ -153,12 +153,13 @@ table_mutation_pos_fantom <- data_icgc_wgs_pos_fantom %>%
   tally()
 
 # output the result
-data_icgc_wgs_output <- data_icgc_wgs %>%
+data_icgc_wgs_output <- data_icgc_wgs_analysis %>%
   select(chromosome = chromosome,
          start = chromosome_start,
          end = chromosome_end,
          ref = mutated_from_allele,
-         alt = mutated_to_allele)
+         alt = mutated_to_allele) %>%
+  distinct()
 
 setwd(output.path)
 write.table(data_icgc_wgs_output, "single_mutations_LIRI-JP.txt",
