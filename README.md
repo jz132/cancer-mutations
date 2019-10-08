@@ -97,25 +97,6 @@ $ ssh -i ./aws_amazon/pcingola_aws.pem ec2-user@ec2-54-234-14-244.compute-1.amaz
 00:00:20.688    Building interval forest
 00:00:33.110    Done.
 ```
-
-You can use the `-fi intervals.bed` command line option (filterInterval). For instance, let's assume you have an interval file "intervals.bed":
-
-```
-2L	10000	10999
-2L	12000	12999
-2L	14000	14999
-2L	16000	16999
-2L	18000	18999 
-```
-
-In order to get only variants matching your intervals, you can use the command:
-
-```
-$ java -Xmx4G -jar snpEff.jar -fi intervals.bed GRCh38.76 test.chr22.vcf 
-```
-
-You can change the default upstream and downstream interval size (default is 5K) using the `-ud size_in_bases` option. This also allows to eliminate any upstream and downstream effect by using "-ud 0". 
-
 More options can be found at the [SnpEff manual](http://snpeff.sourceforge.net/SnpEff_manual.html)
 
 ### Mutation function impact prediction
@@ -124,6 +105,13 @@ To assess the functional impact of missense somatic mutations on protein coding 
 ### Simple somatic mutation frequencies
 In order to assess how often a particular simple somatic mutation (SSM) occurs in cancer patients, we establishes specific criteria to determine whether SSMs reported from different donors are considered to be the same. When all of these fields from two reported SSMs: chromosome, chromosome start, chromosome end, mutation type, DNA change, genome assembly version are identical, they are merged into one mutation entity. With this, we build a non-redundant collection of all simple somatic mutations. Each mutation entry in the collection is assigned a stable identifier for persisted referencing portal wide and across releases. Information for linking these non-redundant SSMs to the reported ones is also kept, enabling mutation counts across donors.
 
+## Explorative data analysis
+Each cancer project has some basic numbers reported on the [Cancer Projects](https://dcc.icgc.org/projects) page, namely the number of donors, the number of mutations, and the number of somatic mutations in donor's exomes. We reproduced these numbers. The details can be found in the [icgc-eda](https://github.com/jz132/cancer-mutations/tree/master/icgc-eda) directory.
 
+## Construct enhancer regions and connect them to target genes
+Since we are more interested in the noncoding somatic mutations in cancer, an important step in our study is to focus on mutations in noncoding regions that are likely to have functional impact on gene expression. In particular, we want to investigate the mutations in promoter and enhancer regions.
 
+While promoters can be easily defined as the genomic regions close to TSS, the definition of enhancers are quite ambiguous and versatile. Moreover, since enhancers can be far away from the gene they regulate, it is crucial to identify the connection between them. Here we adapt two recently published work to construct enhancers and link them to TSS, [An atlas of active enhancers across human cell types and tissues](https://www.nature.com/articles/nature12787) and [Mapping and analysis of chromatin state dynamics in nine human cell types](https://www.nature.com/articles/nature09906).
+
+The details can be found in the [pelinks](https://github.com/jz132/cancer-mutations/tree/master/pelinks) directory.
 
