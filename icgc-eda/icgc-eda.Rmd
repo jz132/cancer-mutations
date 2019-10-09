@@ -4,7 +4,7 @@ output: github_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 library(tidyverse)
 library(fuzzyjoin)
 ```
@@ -16,7 +16,7 @@ The data can be downloaded from ICGC data portal at https://dcc.icgc.org/release
 
 After downloading the data, we read them into R. The columns to include are set by the `keep_cols` variable.
 
-```{r import data, message=FALSE}
+```{r import data}
 icgc.data.path <- "/Users/jz132/Desktop/Gordanlab/Data/ICGC"
 filename <- "simple_somatic_mutation.open.BRCA-FR.tsv"
 
@@ -58,7 +58,7 @@ exome <- setdiff(all_types, c(nonexome, NA))
 
 We can then reproduce some numbers on the [ICGC cancer projects page](https://dcc.icgc.org/projects):
 
-```{r}
+```{r reproduce the numbers}
 data_icgc_raw %>% distinct(icgc_donor_id) %>% nrow() # total number of donors
 data_icgc_raw %>% filter(consequence_type %in% exome) %>% 
   distinct(icgc_donor_id, icgc_mutation_id) %>% nrow() # total number of exome mutations

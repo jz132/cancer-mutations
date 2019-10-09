@@ -1,15 +1,19 @@
+---
+title: "BRCA-EU Simple Somatic Mutations"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 library(tidyverse)
 library(fuzzyjoin)
-options(tibble.width = Inf)
+library(knitr)
+```
 
-# file path
+```{r import and transform data, echo=FALSE}
 icgc.data.path <- "/Users/jz132/Desktop/Gordanlab/Data/ICGC"
 genomic.interval.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks"
-output.path <- "/Users/jz132/Desktop/Gordanlab/Main_Quests/icgc_data_analysis/output"
-
-# global parameters
-appr_genome_len <- 3*10^9
-appr_exome_len <- 3*10^7
+filename <- "simple_somatic_mutation.open.BRCA-EU.tsv"
 
 keep_cols <- c("icgc_mutation_id", 
                "icgc_donor_id", 
@@ -26,67 +30,14 @@ keep_cols <- c("icgc_mutation_id",
                "transcript_affected",
                "sequencing_strategy")
 
-# import ICGC cancer mutations
-# data source https://dcc.icgc.org/releases/current/Projects/
+# import ICGC data
 setwd(icgc.data.path)
-filename <- "simple_somatic_mutation.open.BRCA-FR.tsv"
 data_icgc_try <- read_tsv(filename, col_names = T, n_max = 5)
 col_indicator <- paste(ifelse(colnames(data_icgc_try) %in% keep_cols, "?", "-"), 
                        collapse = "")
-
 data_icgc_raw <- read_tsv(filename,
                           col_names = T, col_types = col_indicator) %>%
   mutate(chromosome = paste0("chr", chromosome))
-
-all_types <- data_icgc_raw %>% distinct(consequence_type) %>% pull()
-nonexome <- c("intron_variant", "intragenic_variant", "upstream_gene_variant", 
-              "downstream_gene_variant", "intergenic_region")
-exome <- setdiff(all_types, c(nonexome, NA))
-
-# reproduce some numbers on the icgc website
-data_icgc_raw %>% distinct(icgc_donor_id) %>% nrow() # total number of donors
-data_icgc_raw %>% 
-  distinct(icgc_donor_id ,icgc_mutation_id) %>% nrow() # total number of mutations
-data_icgc_raw %>% filter(consequence_type %in% exome) %>% 
-  distinct(icgc_donor_id, icgc_mutation_id) %>% nrow() # total number of exome mutations
-
-# median number of exome mutations per mb
-data_icgc_in_exome_by_donor <- data_icgc_raw %>%
-  filter(consequence_type %in% exome) %>%
-  group_by(icgc_donor_id) %>%
-  summarise(n_mutation = n_distinct(icgc_mutation_id))
-median(data_icgc_in_exome_by_donor$n_mutation)*10^6/appr_exome_len 
-
-# focus on single base substitution in WGS only
-data_icgc_wgs <- data_icgc_raw %>% 
-  filter(sequencing_strategy == "WGS", mutation_type == "single base substitution")
-
-rm(data_icgc_raw)
-data_icgc_wgs_analysis <- data_icgc_wgs %>%
-  distinct(icgc_mutation_id, icgc_donor_id, 
-           chromosome, chromosome_start, chromosome_end,
-           reference_genome_allele, mutated_from_allele, mutated_to_allele,
-           consequence_type) %>%
-  filter(!is.na(consequence_type)) %>% 
-  mutate(position = ifelse(consequence_type %in% exome, "exome", "nonexome"))
-
-table_mutation_consequence_snpeff <- data_icgc_wgs_analysis %>%
-  group_by(consequence_type) %>%
-  tally()
-
-# check how snpeff annotates the mutations
-data_icgc_wgs_pos_snpeff <- data_icgc_wgs_analysis %>%
-  group_by(icgc_mutation_id, icgc_donor_id) %>%
-  summarise(position = case_when(
-    all(position == "exome") ~ "exome",
-    all(position == "nonexome") ~ "nonexome",
-    TRUE ~ "both"
-  )) %>%
-  ungroup()
-
-table_mutation_pos_snpeff <- data_icgc_wgs_pos_snpeff %>% 
-  group_by(position) %>%
-  tally()
 
 # import genomic coordinates of promoters, enhancers, and exons
 setwd(genomic.interval.path)
@@ -96,9 +47,34 @@ data_enhancers_fantom <- read_delim("all_enhancers_fantom.bed", delim = "\t",
                                     col_names = c("chromosome", "start", "end"))
 data_exons_fantom <- read_delim("all_exons_fantom.bed", delim = "\t", 
                                 col_names = c("chromosome", "start", "end"))
+length_promoters_raw <- sum(data_promoters_fantom$end - data_promoters_fantom$start)
+length_enhancers <- sum(data_enhancers_fantom$end - data_enhancers_fantom$start)
+length_exons <- sum(data_exons_fantom$end - data_exons_fantom$start)
+data_exons_in_promoters <- data_exons_fantom %>%
+  genome_inner_join(data_promoters_fantom) %>%
+  mutate(start = pmax(start.x, start.y),
+         end = pmin(end.x, end.y)) %>%
+  select(chromosome = chromosome.x, start, end) %>%
+  distinct()
+length_exons_in_promoters <- sum(data_exons_in_promoters$end - data_exons_in_promoters$start)
+length_promoters <- length_promoters_raw - length_exons_in_promoters
+
+table_length <- tibble(position = c("promoter", "enhancer", "exon", "others"),
+                       length = c(length_promoters, length_enhancers, length_exons, NA))
+
+all_types <- data_icgc_raw %>% distinct(consequence_type) %>% pull()
+nonexome <- c("intron_variant", "intragenic_variant", "upstream_gene_variant", 
+              "downstream_gene_variant", "intergenic_region")
+exome <- setdiff(all_types, c(nonexome, NA))
+
+# focus on single base substitution in WGS only
+data_icgc_wgs <- data_icgc_raw %>% 
+  filter(sequencing_strategy == "WGS", mutation_type == "single base substitution")
+num_donors <- length(data_icgc_wgs %>% distinct(icgc_donor_id) %>% pull())
 
 # check how fantom annotates the mutations
-data_icgc_wgs_to_join <- data_icgc_wgs_analysis %>%
+data_icgc_wgs_to_join <- data_icgc_wgs %>%
+  filter(!is.na(consequence_type)) %>% 
   select(chromosome = chromosome,
          start = chromosome_start,
          end = chromosome_end,
@@ -150,19 +126,13 @@ data_icgc_wgs_pos_fantom <- mutate(mut_exon, position = 'exon') %>%
 
 table_mutation_pos_fantom <- data_icgc_wgs_pos_fantom %>% 
   group_by(position) %>%
-  tally()
+  tally(name = "count") %>%
+  inner_join(table_length) %>%
+  mutate(mutation_rate = count/(num_donors*length))
+```
 
-# output the result
-data_icgc_wgs_output <- data_icgc_wgs_analysis %>%
-  select(chromosome = chromosome,
-         start = chromosome_start,
-         end = chromosome_end,
-         ref = mutated_from_allele,
-         alt = mutated_to_allele) %>%
-  distinct()
+The number of mutations in each type of region:
 
-setwd(output.path)
-write.table(data_icgc_wgs_output, "single_mutations_BRCA-FR.txt",
-            row.names = F, col.names = T, quote = F, sep = "\t")
-
-
+```{r table, echo=FALSE, results='asis'}
+kable(table_mutation_pos_fantom, caption = 'Single base substitution in WGS studies')
+```

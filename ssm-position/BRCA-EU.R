@@ -29,7 +29,7 @@ keep_cols <- c("icgc_mutation_id",
 # import ICGC cancer mutations
 # data source https://dcc.icgc.org/releases/current/Projects/
 setwd(icgc.data.path)
-filename <- "simple_somatic_mutation.open.LIRI-JP.tsv"
+filename <- "simple_somatic_mutation.open.BRCA-EU.tsv"
 data_icgc_try <- read_tsv(filename, col_names = T, n_max = 5)
 col_indicator <- paste(ifelse(colnames(data_icgc_try) %in% keep_cols, "?", "-"), 
                        collapse = "")
@@ -43,25 +43,10 @@ nonexome <- c("intron_variant", "intragenic_variant", "upstream_gene_variant",
               "downstream_gene_variant", "intergenic_region")
 exome <- setdiff(all_types, c(nonexome, NA))
 
-# reproduce some numbers on the icgc website
-data_icgc_raw %>% distinct(icgc_donor_id) %>% nrow() # total number of donors
-data_icgc_raw %>% 
-  distinct(icgc_donor_id ,icgc_mutation_id) %>% nrow() # total number of mutations
-data_icgc_raw %>% filter(consequence_type %in% exome) %>% 
-  distinct(icgc_donor_id, icgc_mutation_id) %>% nrow() # total number of exome mutations
-
-# median number of exome mutations per mb
-data_icgc_in_exome_by_donor <- data_icgc_raw %>%
-  filter(consequence_type %in% exome) %>%
-  group_by(icgc_donor_id) %>%
-  summarise(n_mutation = n_distinct(icgc_mutation_id))
-median(data_icgc_in_exome_by_donor$n_mutation)*10^6/appr_exome_len 
-
 # focus on single base substitution in WGS only
 data_icgc_wgs <- data_icgc_raw %>% 
   filter(sequencing_strategy == "WGS", mutation_type == "single base substitution")
 
-rm(data_icgc_raw)
 data_icgc_wgs_analysis <- data_icgc_wgs %>%
   distinct(icgc_mutation_id, icgc_donor_id, 
            chromosome, chromosome_start, chromosome_end,
@@ -161,8 +146,8 @@ data_icgc_wgs_output <- data_icgc_wgs_analysis %>%
          alt = mutated_to_allele) %>%
   distinct()
 
-setwd(output.path)
-write.table(data_icgc_wgs_output, "single_mutations_LIRI-JP.txt",
-            row.names = F, col.names = T, quote = F, sep = "\t")
+# setwd(output.path)
+# write.table(data_icgc_wgs_output, "single_mutations_BRCA-FR.txt",
+#             row.names = F, col.names = T, quote = F, sep = "\t")
 
 
