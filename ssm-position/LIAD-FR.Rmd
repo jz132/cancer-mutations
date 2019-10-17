@@ -1,6 +1,7 @@
 ---
 title: "LIAD-FR Simple Somatic Mutations"
 output: github_document
+always_allow_html: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -8,6 +9,7 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 library(tidyverse)
 library(fuzzyjoin)
 library(knitr)
+library(kableExtra)
 ```
 
 ```{r import and transform data, echo=FALSE}
@@ -39,6 +41,21 @@ data_icgc_raw <- read_tsv(filename,
                           col_names = T, col_types = col_indicator) %>%
   mutate(chromosome = paste0("chr", chromosome))
 
+all_types <- data_icgc_raw %>% distinct(consequence_type) %>% pull()
+nonexome <- c("intron_variant", "intragenic_variant", "upstream_gene_variant", 
+              "downstream_gene_variant", "intergenic_region")
+exome <- setdiff(all_types, c(nonexome, NA))
+
+# focus on single base substitution in WGS only
+data_icgc_wgs <- data_icgc_raw %>% 
+  filter(sequencing_strategy == "WGS", mutation_type == "single base substitution")
+num_donors <- length(data_icgc_wgs %>% distinct(icgc_donor_id) %>% pull())
+num_mutations <- length(data_icgc_wgs %>% distinct(icgc_mutation_id, icgc_donor_id) %>% pull())
+```
+
+There are `r num_donors` donors with WGS data in the study. The total number of single mutations is `r num_mutations`. 
+
+```{r fantom annotation, echo=FALSE}
 # import genomic coordinates of promoters, enhancers, and exons
 setwd(genomic.interval.path)
 data_promoters_fantom <- read_delim("all_promoters_fantom.bed", delim = "\t",
@@ -61,16 +78,6 @@ length_promoters <- length_promoters_raw - length_exons_in_promoters
 
 table_length <- tibble(position = c("promoter", "enhancer", "exon", "others"),
                        length = c(length_promoters, length_enhancers, length_exons, NA))
-
-all_types <- data_icgc_raw %>% distinct(consequence_type) %>% pull()
-nonexome <- c("intron_variant", "intragenic_variant", "upstream_gene_variant", 
-              "downstream_gene_variant", "intergenic_region")
-exome <- setdiff(all_types, c(nonexome, NA))
-
-# focus on single base substitution in WGS only
-data_icgc_wgs <- data_icgc_raw %>% 
-  filter(sequencing_strategy == "WGS", mutation_type == "single base substitution")
-num_donors <- length(data_icgc_wgs %>% distinct(icgc_donor_id) %>% pull())
 
 # check how fantom annotates the mutations
 data_icgc_wgs_to_join <- data_icgc_wgs %>%
@@ -102,7 +109,7 @@ mut_exon <- data_exons_fantom %>%
          icgc_donor_id) %>%
   distinct()
 
-mut_promoter_raw <- data_promoters_fantom %>% 
+mut_promoter <- data_promoters_fantom %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   na.omit() %>%
   select(chromosome = chromosome.y,
@@ -110,9 +117,7 @@ mut_promoter_raw <- data_promoters_fantom %>%
          end = end.y,
          icgc_mutation_id,
          icgc_donor_id) %>%
-  distinct()
-
-mut_promoter <- mut_promoter_raw %>%
+  distinct() %>%
   setdiff(mut_exon)
 
 mut_others <- data_icgc_wgs_to_join %>%
@@ -131,8 +136,9 @@ table_mutation_pos_fantom <- data_icgc_wgs_pos_fantom %>%
   mutate(mutation_rate = count/(num_donors*length))
 ```
 
-The number of mutations in each type of region:
+The number of single mutations in each type of region:
 
 ```{r table, echo=FALSE, results='asis'}
-kable(table_mutation_pos_fantom, caption = 'Single base substitution in WGS studies')
+kable(table_mutation_pos_fantom, caption = 'Single base substitution in WGS studies') %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
 ```
