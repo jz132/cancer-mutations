@@ -1,3 +1,4 @@
+library(GenomicRanges)
 library(tidyverse)
 library(fuzzyjoin)
 options(tibble.width = Inf)
@@ -29,7 +30,7 @@ keep_cols <- c("icgc_mutation_id",
 # import ICGC cancer mutations
 # data source https://dcc.icgc.org/releases/current/Projects/
 setwd(icgc.data.path)
-filename <- "simple_somatic_mutation.open.BRCA-EU.tsv"
+filename <- "simple_somatic_mutation.open.LIAD-FR.tsv"
 data_icgc_try <- read_tsv(filename, col_names = T, n_max = 5)
 col_indicator <- paste(ifelse(colnames(data_icgc_try) %in% keep_cols, "?", "-"), 
                        collapse = "")
@@ -81,6 +82,17 @@ data_enhancers_fantom <- read_delim("all_enhancers_fantom.bed", delim = "\t",
                                     col_names = c("chromosome", "start", "end"))
 data_exons_fantom <- read_delim("all_exons_fantom.bed", delim = "\t", 
                                 col_names = c("chromosome", "start", "end"))
+gr1 <- GRanges(seqnames = Rle(data_promoters_fantom$chromosome),
+               ranges = IRanges(data_promoters_fantom$start, data_promoters_fantom$end))
+gr1_reduced <- GenomicRanges::reduce(gr1)
+gr2 <- GRanges(seqnames = Rle(data_exons_fantom$chromosome),
+               ranges = IRanges(data_exons_fantom$start, data_exons_fantom$end))
+gr2_reduced <- GenomicRanges::reduce(gr2)
+data_exons_reduced <- tibble(
+  chromosome = as.character(seqnames(gr2_reduced)),
+  start = start(gr2_reduced),
+  end = end(gr2_reduced)
+)
 
 # check how fantom annotates the mutations
 data_icgc_wgs_to_join <- data_icgc_wgs_analysis %>%
