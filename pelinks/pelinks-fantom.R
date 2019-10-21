@@ -8,6 +8,7 @@
 #   install.packages("BiocManager")
 # BiocManager::install("genomeIntervals")
 library(genomeIntervals)
+library(GenomicRanges)
 library(tidyverse)
 library(dplyr)
 library(tidyr)
@@ -32,12 +33,10 @@ half_exon <- 200 # enhancers within this distance to exons are removed
 setwd(fantom.path)
 data_enhancers_rob <- as_tibble(read.table("robust_enhancers.bed", 
                                            header = F, sep = '\t')) %>%
-  select(V1, V2, V3, V4) %>%
-  rename(chromosome = V1, start = V2, end = V3, enhancer = V4)
+  select(chromosome = V1, start = V2, end = V3, enhancer = V4)
 data_enhancers_per <- as_tibble(read.table("permissive_enhancers.bed", 
                                            header = F, sep = '\t', skip = 1)) %>%
-  select(V1, V2, V3, V4) %>%
-  rename(chromosome = V1, start = V2, end = V3, enhancer = V4)
+  select(chromosome = V1, start = V2, end = V3, enhancer = V4)
 data_association_refseq <- as_tibble(read.table("enhancer_tss_associations_complete.bed", 
                                       header = F, sep = '\t'))
 
@@ -74,10 +73,11 @@ length(unique(e_eplinks_refseq))/length(e_all_per) #percentage of enhancers that
 
 
 ## Part 2. Filter out enhancers that are too close to exons or tss , and build tss-enhancer links
+all_chromosomes <- unique(data_enhancers_per$chromosome)
 setwd(refseq.path)
 exons_region_refseq <- as_tibble(read.table("refseq_exons_171007.bed", sep = "\t")) %>%
-  select(V1, V2, V3) %>%
-  rename(chromosome = V1, start = V2, end = V3) %>%
+  select(chromosome = V1, start = V2, end = V3) %>%
+  filter(chromosome %in% all_chromosomes) %>%
   distinct()
 exons_region_ext <- exons_region_refseq %>%
   select(chromosome, start, end) %>%
@@ -86,8 +86,8 @@ exons_region_ext <- exons_region_refseq %>%
 
 tss_refseq <- as_tibble(read.table("refseq_TSS_hg19_170929.bed",
                                    header = F, sep = '\t')) %>%
-  select(V1, V2, V3, V4) %>%
-  rename(chromosome = V1, start = V2, end = V3, tss = V4) %>%
+  select(chromosome = V1, start = V2, end = V3, tss = V4) %>%
+  filter(chromosome %in% all_chromosomes) %>%
   arrange(chromosome, start, end, tss) %>%
   distinct()
 tss_region_ext <- tss_refseq %>%
@@ -102,7 +102,7 @@ data_enhancers_exclude <- data_enhancers_per %>%
               genome_inner_join(exons_region_ext) %>%
               select(chromosome.x, start.x, end.x)) %>%
   distinct() %>%
-  rename(chromosome = chromosome.x, start = start.x, end = end.x)
+  dplyr::rename(chromosome = chromosome.x, start = start.x, end = end.x)
 
 data_enhancers_new <- data_enhancers_per %>%
   anti_join(data_enhancers_exclude)
