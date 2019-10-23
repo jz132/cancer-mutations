@@ -117,17 +117,17 @@ g_eplinks_refseq <- unlist(lapply(refseq_info_split_filtered, `[[`, 3))
 tss_all <- unique(unlist(strsplit(tss_eplinks_refseq, split = ",")))
 
 # Build tss-enhancer links
-pelinks_raw <- tibble(enhancer = e_eplinks_refseq,
-                      tss = tss_eplinks_refseq, 
-                      gene = g_eplinks_refseq
+eplinks_filtered <- tibble(enhancer = e_eplinks_refseq, 
+                           tss = tss_eplinks_refseq, 
+                           gene = g_eplinks_refseq
 )
 
-mapping_tss_enhancer <- pelinks_raw %>% 
+mapping_tss_enhancer <- eplinks_filtered %>% 
   select(tss, enhancer) %>%
   group_by(tss) %>%
   summarise(enhancer = paste0(enhancer, collapse=";"))
 
-mapping_tss_gene <- pelinks_raw %>% 
+mapping_tss_gene <- eplinks_filtered %>% 
   select(tss, gene) %>%
   distinct()
 # these genes are annotated by fantom file enhancer_tss_associations.bed
@@ -173,6 +173,7 @@ data_exons_output <- exons_region_refseq %>% select(chromosome, start, end)
 
 setwd(output.path)
 write.csv(pelinks_sameTSS, "pelinks-fantom.csv", quote = F, row.names = F)
+write.csv(eplinks_filtered, "eplinks-filtered.csv", quote = F, row.names = F)
 write.table(data_promoters_output, "all_promoters_fantom.bed", 
             quote = F, row.names = F, col.names = F, sep = "\t")
 write.table(data_enhancers_output, "all_enhancers_fantom.bed", 
@@ -180,28 +181,28 @@ write.table(data_enhancers_output, "all_enhancers_fantom.bed",
 write.table(data_exons_output, "all_exons_fantom.bed", 
             quote = F, row.names = F, col.names = F, sep = "\t")
 
-# a histogram showing the distribution of enhancer length
-setwd(output.path)
-data_enhancers_plot <- data_enhancers_per %>%
-  mutate(length = end - start)
-png(file = "enhancer_length_dist.png", width = 1200, height = 800, res = 160)
-ggplot(data_enhancers_plot, aes(x = length)) +
-  geom_histogram(fill = "lightblue", alpha = 0.7, boundary = 0) +
-  labs(x = "enhancer length") +
-  theme_bw()
-dev.off()
-
-# A bar plot showing the number of enhancers each tss is associated with
-setwd(output.path)
-pelinks_plot <- pelinks_sameTSS %>%
-  mutate(category = cut(e_count, breaks = c(0, 5, 10, 15, 20, Inf), right = F)) %>%
-  group_by(category) %>%
-  summarise(count = n())
-png(file = "enhancers_per_tss.png", width = 1200, height = 800, res = 160)
-ggplot(pelinks_plot, aes(x = category, y = count)) +
-  geom_bar(stat = "identity", fill = "lightblue", alpha = 0.7, width = 0.5) + 
-  geom_text(aes(label = count), nudge_y = 500) +
-  labs(x = "number of enhancers per tss") +
-  theme_bw()
-dev.off()
+# # a histogram showing the distribution of enhancer length
+# setwd(output.path)
+# data_enhancers_plot <- data_enhancers_per %>%
+#   mutate(length = end - start)
+# png(file = "enhancer_length_dist.png", width = 1200, height = 800, res = 160)
+# ggplot(data_enhancers_plot, aes(x = length)) +
+#   geom_histogram(fill = "lightblue", alpha = 0.7, boundary = 0) +
+#   labs(x = "enhancer length") +
+#   theme_bw()
+# dev.off()
+# 
+# # A bar plot showing the number of enhancers each tss is associated with
+# setwd(output.path)
+# pelinks_plot <- pelinks_sameTSS %>%
+#   mutate(category = cut(e_count, breaks = c(0, 5, 10, 15, 20, Inf), right = F)) %>%
+#   group_by(category) %>%
+#   summarise(count = n())
+# png(file = "enhancers_per_tss.png", width = 1200, height = 800, res = 160)
+# ggplot(pelinks_plot, aes(x = category, y = count)) +
+#   geom_bar(stat = "identity", fill = "lightblue", alpha = 0.7, width = 0.5) + 
+#   geom_text(aes(label = count), nudge_y = 500) +
+#   labs(x = "number of enhancers per tss") +
+#   theme_bw()
+# dev.off()
 
