@@ -5,7 +5,7 @@ always_allow_html: yes
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 library(tidyverse)
 library(fuzzyjoin)
 library(knitr)
@@ -153,9 +153,10 @@ table_mutation_pos_fantom <- data_icgc_wgs_pos_fantom %>%
   tally(name = "count") %>%
   inner_join(table_length) %>%
   mutate(mutation_rate = scientific(count/num_donors/length))
-kable(table_mutation_pos_fantom, caption = 'Single base substitution in WGS studies')
+kable(table_mutation_pos_fantom)
 ```
 
+For promoter regions, we played with its length:
 
 ```{r promoter length, echo=F, results='asis'}
 setwd(genomic.interval.path)
@@ -208,3 +209,53 @@ table_promoters_test <- tibble(
 )
 kable(table_promoters_test)
 ```
+
+```{r mutated enhancers, echo=F}
+data_enhancers_mutated <- data_enhancers_fantom %>% 
+  genome_inner_join(data_icgc_wgs_to_join) %>%
+  select(chromosome = chromosome.x,
+         start = start.x,
+         end = end.x,
+         icgc_mutation_id,
+         icgc_donor_id) %>%
+  group_by(chromosome, start, end) %>%
+  tally(name = "count") %>%
+  mutate(length = end - start) %>%
+  mutate(rate = count/length) %>%
+  arrange(desc(count)) %>%
+  ungroup()
+```
+
+```{r top genes, echo=F}
+setwd(genomic.interval.path)
+data_eplinks <- read_delim("eplinks-filtered.csv", delim = ",")
+data_enh_per_gene <- data_eplinks %>% 
+  group_by(gene) %>%
+  tally(name = "enh_count") %>%
+  ungroup()
+
+data_enhancers_affected <- data_enhancers_mutated %>%
+  mutate(temp = paste(start, end, sep = "-")) %>%
+  mutate(enhancer = paste(chromosome, temp, sep = ":")) %>%
+  select(enhancer, count, length, rate)
+data_genes_affected <- data_enhancers_affected %>%
+  inner_join(data_eplinks) %>%
+  group_by(gene) %>%
+  summarise(mut_count = sum(count)) %>%
+  ungroup() %>%
+  arrange(desc(mut_count)) %>%
+  inner_join(data_enh_per_gene)
+```
+
+The top-mutated enhancers:
+
+```{r top enhancers}
+kable(data_enhancers_affected %>% dplyr::slice(1:10))
+```
+
+The genes whose enhancers harbor the greatest number of mutations:
+
+```{r top gene}
+kable(data_genes_affected %>% dplyr::slice(1:10))
+```
+
