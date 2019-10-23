@@ -1,16 +1,25 @@
-library(GenomicRanges)
 library(tidyverse)
 library(fuzzyjoin)
+library(knitr)
+library(scales)
+library(GenomicRanges)
 options(tibble.width = Inf)
 
-# file path
+nonOverlap <- function(intervals){
+  gr <- GRanges(seqnames = Rle(intervals$chromosome), 
+                ranges = IRanges(intervals$start, intervals$end))
+  gr_reduced <- GenomicRanges::reduce(gr)
+  outcome <- tibble(
+    chromosome = as.character(seqnames(gr_reduced)),
+    start = start(gr_reduced),
+    end = end(gr_reduced))
+  return(outcome)
+}
+
+# file paths and file names
 icgc.data.path <- "/Users/jz132/Desktop/Gordanlab/Data/ICGC"
 genomic.interval.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks"
-output.path <- "/Users/jz132/Desktop/Gordanlab/Main_Quests/icgc_data_analysis/output"
-
-# global parameters
-appr_genome_len <- 3*10^9
-appr_exome_len <- 3*10^7
+filename <- "simple_somatic_mutation.open.LIAD-FR.tsv"
 
 keep_cols <- c("icgc_mutation_id", 
                "icgc_donor_id", 
@@ -27,75 +36,52 @@ keep_cols <- c("icgc_mutation_id",
                "transcript_affected",
                "sequencing_strategy")
 
-# import ICGC cancer mutations
-# data source https://dcc.icgc.org/releases/current/Projects/
+# import ICGC data
 setwd(icgc.data.path)
-filename <- "simple_somatic_mutation.open.LIAD-FR.tsv"
 data_icgc_try <- read_tsv(filename, col_names = T, n_max = 5)
-col_indicator <- paste(ifelse(colnames(data_icgc_try) %in% keep_cols, "?", "-"), 
-                       collapse = "")
-
-data_icgc_raw <- read_tsv(filename,
-                          col_names = T, col_types = col_indicator) %>%
+col_indicator <- paste(ifelse(colnames(data_icgc_try) %in% keep_cols, "?", "-"), collapse = "")
+data_icgc_raw <- read_tsv(filename, col_names = T, col_types = col_indicator) %>%
   mutate(chromosome = paste0("chr", chromosome))
 
 all_types <- data_icgc_raw %>% distinct(consequence_type) %>% pull()
 nonexome <- c("intron_variant", "intragenic_variant", "upstream_gene_variant", 
               "downstream_gene_variant", "intergenic_region")
-exome <- setdiff(all_types, c(nonexome, NA))
+exome <- dplyr::setdiff(all_types, c(nonexome, NA))
 
 # focus on single base substitution in WGS only
 data_icgc_wgs <- data_icgc_raw %>% 
   filter(sequencing_strategy == "WGS", mutation_type == "single base substitution")
-
-data_icgc_wgs_analysis <- data_icgc_wgs %>%
-  distinct(icgc_mutation_id, icgc_donor_id, 
-           chromosome, chromosome_start, chromosome_end,
-           reference_genome_allele, mutated_from_allele, mutated_to_allele,
-           consequence_type) %>%
-  filter(!is.na(consequence_type)) %>% 
-  mutate(position = ifelse(consequence_type %in% exome, "exome", "nonexome"))
-
-table_mutation_consequence_snpeff <- data_icgc_wgs_analysis %>%
-  group_by(consequence_type) %>%
-  tally()
-
-# check how snpeff annotates the mutations
-data_icgc_wgs_pos_snpeff <- data_icgc_wgs_analysis %>%
-  group_by(icgc_mutation_id, icgc_donor_id) %>%
-  summarise(position = case_when(
-    all(position == "exome") ~ "exome",
-    all(position == "nonexome") ~ "nonexome",
-    TRUE ~ "both"
-  )) %>%
-  ungroup()
-
-table_mutation_pos_snpeff <- data_icgc_wgs_pos_snpeff %>% 
-  group_by(position) %>%
-  tally()
+num_donors <- length(data_icgc_wgs %>% distinct(icgc_donor_id) %>% pull())
+num_mutations <- length(data_icgc_wgs %>% distinct(icgc_mutation_id, icgc_donor_id) %>% pull())
 
 # import genomic coordinates of promoters, enhancers, and exons
 setwd(genomic.interval.path)
-data_promoters_fantom <- read_delim("all_promoters_fantom.bed", delim = "\t",
-                                    col_names = c("chromosome", "start", "end"))
 data_enhancers_fantom <- read_delim("all_enhancers_fantom.bed", delim = "\t",
+                                    col_names = c("chromosome", "start", "end"))
+data_promoters_fantom <- read_delim("all_promoters_fantom.bed", delim = "\t",
                                     col_names = c("chromosome", "start", "end"))
 data_exons_fantom <- read_delim("all_exons_fantom.bed", delim = "\t", 
                                 col_names = c("chromosome", "start", "end"))
-gr1 <- GRanges(seqnames = Rle(data_promoters_fantom$chromosome),
-               ranges = IRanges(data_promoters_fantom$start, data_promoters_fantom$end))
-gr1_reduced <- GenomicRanges::reduce(gr1)
-gr2 <- GRanges(seqnames = Rle(data_exons_fantom$chromosome),
-               ranges = IRanges(data_exons_fantom$start, data_exons_fantom$end))
-gr2_reduced <- GenomicRanges::reduce(gr2)
-data_exons_reduced <- tibble(
-  chromosome = as.character(seqnames(gr2_reduced)),
-  start = start(gr2_reduced),
-  end = end(gr2_reduced)
-)
+data_promoters_fantom <- nonOverlap(data_promoters_fantom)
+data_exons_fantom <- nonOverlap(data_exons_fantom)
+data_exons_in_promoters <- data_exons_fantom %>%
+  genome_inner_join(data_promoters_fantom) %>%
+  mutate(start = pmax(start.x, start.y),
+         end = pmin(end.x, end.y)) %>%
+  select(chromosome = chromosome.x, start, end) %>%
+  distinct()
+
+length_enhancers <- sum(data_enhancers_fantom$end - data_enhancers_fantom$start)
+length_exons <- sum(data_exons_fantom$end - data_exons_fantom$start)
+length_exons_in_promoters <- sum(data_exons_in_promoters$end - data_exons_in_promoters$start)
+length_promoters <- sum(data_promoters_fantom$end - data_promoters_fantom$start) - length_exons_in_promoters
+
+table_length <- tibble(position = c("promoter", "enhancer", "exon", "others"),
+                       length = c(length_promoters, length_enhancers, length_exons, NA))
 
 # check how fantom annotates the mutations
-data_icgc_wgs_to_join <- data_icgc_wgs_analysis %>%
+data_icgc_wgs_to_join <- data_icgc_wgs %>%
+  filter(!is.na(consequence_type)) %>% 
   select(chromosome = chromosome,
          start = chromosome_start,
          end = chromosome_end,
@@ -123,7 +109,7 @@ mut_exon <- data_exons_fantom %>%
          icgc_donor_id) %>%
   distinct()
 
-mut_promoter_raw <- data_promoters_fantom %>% 
+mut_promoter <- data_promoters_fantom %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   na.omit() %>%
   select(chromosome = chromosome.y,
@@ -131,13 +117,11 @@ mut_promoter_raw <- data_promoters_fantom %>%
          end = end.y,
          icgc_mutation_id,
          icgc_donor_id) %>%
-  distinct()
-
-mut_promoter <- mut_promoter_raw %>%
-  setdiff(mut_exon)
+  distinct() %>%
+  dplyr::setdiff(mut_exon)
 
 mut_others <- data_icgc_wgs_to_join %>%
-  setdiff(bind_rows(mut_exon, mut_promoter, mut_enhancer))
+  dplyr::setdiff(bind_rows(mut_exon, mut_promoter, mut_enhancer))
 
 data_icgc_wgs_pos_fantom <- mutate(mut_exon, position = 'exon') %>%
   bind_rows(mutate(mut_promoter, position = 'promoter')) %>%
@@ -147,19 +131,34 @@ data_icgc_wgs_pos_fantom <- mutate(mut_exon, position = 'exon') %>%
 
 table_mutation_pos_fantom <- data_icgc_wgs_pos_fantom %>% 
   group_by(position) %>%
-  tally()
+  tally(name = "count") %>%
+  inner_join(table_length) %>%
+  mutate(mutation_rate = scientific(count/num_donors/length))
 
-# output the result
-data_icgc_wgs_output <- data_icgc_wgs_analysis %>%
-  select(chromosome = chromosome,
-         start = chromosome_start,
-         end = chromosome_end,
-         ref = mutated_from_allele,
-         alt = mutated_to_allele) %>%
+mut_enhancer_compare <- mut_enhancer %>%
+  distinct(icgc_mutation_id) %>%
+  inner_join(data_icgc_wgs %>% select(icgc_mutation_id, consequence_type)) %>%
   distinct()
 
-# setwd(output.path)
-# write.table(data_icgc_wgs_output, "single_mutations_BRCA-FR.txt",
-#             row.names = F, col.names = T, quote = F, sep = "\t")
+mut_exon_compare <- mut_exon %>%
+  distinct(icgc_mutation_id) %>%
+  inner_join(data_icgc_wgs %>% select(icgc_mutation_id, consequence_type)) %>%
+  distinct()
 
+mut_promoter_compare <- mut_promoter %>%
+  distinct(icgc_mutation_id) %>%
+  inner_join(data_icgc_wgs %>% select(icgc_mutation_id, consequence_type)) %>%
+  distinct()
 
+mut_promoter_compare %>% 
+  filter(consequence_type == "intron_variant" | 
+           consequence_type == "upstream_gene_variant") %>%
+  distinct(icgc_mutation_id)
+
+mut_promoter_compare %>% 
+  filter(consequence_type %in% nonexome) %>%
+  distinct(icgc_mutation_id)
+
+mut_enhancer_compare %>% 
+  filter(consequence_type %in% nonexome) %>%
+  distinct(icgc_mutation_id)
