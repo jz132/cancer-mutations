@@ -66,14 +66,13 @@ num_mutations <- length(data_icgc_wgs %>% distinct(icgc_mutation_id, icgc_donor_
 if(!all(data_icgc_wgs$mutated_from_allele == data_icgc_wgs$reference_genome_allele)){
   warning("reference genome allele is not the same as mutated from allele")
 }
-  
 
-# import genomic coordinates of enhancers and links between enhancers and tss
+
+# import genomic coordinates of exons
 setwd(genomic.interval.path)
-mapping_eplinks <- read_delim("eplinks-filtered.csv", delim = ",") %>%
-  select(enhancer, gene = tss)
-data_enhancers_fantom <- read_delim("all_enhancers_fantom.bed", delim = "\t",
-                                    col_names = c("chromosome", "start", "end"))
+data_exons_fantom <- read_delim("all_exons_fantom.bed", delim = "\t", 
+                                col_names = c("chromosome", "start", "end")) %>%
+  arrange(chromosome, start, end)
 
 # check how fantom annotates the mutations
 data_icgc_wgs_to_join <- data_icgc_wgs %>%
@@ -87,8 +86,8 @@ data_icgc_wgs_to_join <- data_icgc_wgs %>%
          mut = mutated_to_allele) %>%
   distinct()
 
-# number of mutation in each enhancer
-data_enhancers_mutated <- data_enhancers_fantom %>% 
+# number of mutation in each exon
+data_exons_mutated <- data_exons_fantom %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   select(chromosome = chromosome.x,
          start = start.x,
@@ -101,8 +100,8 @@ data_enhancers_mutated <- data_enhancers_fantom %>%
   mutate(length = end - start) %>%
   ungroup()
 
-# enhancer mutations
-mut_enhancer <- data_enhancers_fantom %>% 
+# exon mutations
+mut_exon <- data_exons_fantom %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   na.omit() %>%
   select(chromosome = chromosome.y,
@@ -113,21 +112,21 @@ mut_enhancer <- data_enhancers_fantom %>%
          ref,
          mut) %>%
   distinct()
-mut_enhancer_bg <- mut_enhancer %>%
+mut_exon_bg <- mut_exon %>%
   mutate(start = start - 1,
          end = end + 1)
 
-seq_enhancers_fantom <- getSeq(genome, names = data_enhancers_fantom$chromosome,
-                               start = data_enhancers_fantom$start,
-                               end = data_enhancers_fantom$end)
-mat_tri <- reverseMerge(trinucleotideFrequency(seq_enhancers_fantom))
+seq_exons_fantom <- getSeq(genome, names = data_exons_fantom$chromosome,
+                               start = data_exons_fantom$start,
+                               end = data_exons_fantom$end)
+mat_tri <- reverseMerge(trinucleotideFrequency(seq_exons_fantom))
 freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count") %>%
   mutate(percentage = 100*count/sum(count))
 
-seq_enhancer_mutations <- getSeq(genome, names = mut_enhancer_bg$chromosome,
-                                 start = mut_enhancer_bg$start,
-                                 end = mut_enhancer_bg$end)
-mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_enhancer_mutations))
+seq_exon_mutations <- getSeq(genome, names = mut_exon_bg$chromosome,
+                                 start = mut_exon_bg$start,
+                                 end = mut_exon_bg$end)
+mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_exon_mutations))
 freq_tri_mut <- enframe(colSums(mat_tri_mut), name = "trinucleotide", value = "mut_count") %>%
   arrange(desc(mut_count))
 
@@ -135,10 +134,10 @@ freq_tri <- freq_tri %>%
   inner_join(freq_tri_mut) %>%
   mutate(mut_rate = mut_count/count/num_donors)
 
-data_enhancers_mutated <- data_enhancers_mutated %>%
+data_exons_mutated <- data_exons_mutated %>%
   mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors))
 
-# annotate by refseq
+# annotate by refseq 
 setwd(refseq.data.path)
 mapping_hgnc <- read_delim("refseq_to_hgnc.txt", delim = "\t") %>%
   select(hgnc_symbol = `Approved symbol`,
@@ -148,16 +147,20 @@ mapping_hgnc <- read_delim("refseq_to_hgnc.txt", delim = "\t") %>%
   select(hgnc_symbol, gene) %>%
   na.omit() %>%
   distinct()
+mapping_refseq_exon <- read_delim("refseq_exons_171007.bed", delim = '\t',
+                             col_names = F) %>%
+  select(1:4) %>%
+  rename(chromosome = "X1", start = "X2", end = "X3", gene = "X4") %>%
+  mutate(gene = gsub("_exon.*$", "", gene))
 
-data_enhancers_mutated_annotated <- data_enhancers_mutated %>%
-  mutate(enhancer = paste(chromosome, paste(start, end, sep = "-"), sep = ":")) %>%
-  inner_join(mapping_eplinks) %>%
-  inner_join(mapping_hgnc) %>%
-  select(-enhancer)
+data_exons_mutated_annotated <- data_exons_mutated %>%
+  inner_join(mapping_refseq_exon) %>%
+  inner_join(mapping_hgnc)
 
-table_enhancer_mutation_by_gene <- data_enhancers_mutated_annotated %>% 
+table_exon_mutation_by_gene <- data_exons_mutated_annotated %>% 
   group_by(hgnc_symbol) %>% 
   summarise(count = sum(count),
-            enhancer_length = sum(length),
+            exon_length = sum(length),
             expected_count = sum(expected_count)) %>% 
   arrange(desc(count)) 
+
