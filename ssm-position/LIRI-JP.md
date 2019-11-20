@@ -12,6 +12,7 @@ The number of single mutations in each type of region:
 | exon     |   68300 | 81028378 | 3.27e-06       |
 | others   | 3377186 |       NA | NA             |
 | promoter |   36690 | 46574079 | 3.05e-06       |
+| random   |  109626 | 98422278 | 4.32e-06       |
 
 For promoter regions, we played with its length:
 
@@ -25,7 +26,7 @@ For promoter regions, we played with its length:
 
 The top-mutated enhancers:
 
-| enhancer                 | count | length |      rate |
+| enhancer                 | count | length | mut\_rate |
 | :----------------------- | ----: | -----: | --------: |
 | chr1:144533627-144534178 |     7 |    551 | 0.0127042 |
 | chr7:20254261-20255002   |     7 |    741 | 0.0094467 |

@@ -85,14 +85,19 @@ data_exons_in_promoters <- data_exons_fantom %>%
          end = pmin(end.x, end.y)) %>%
   select(chromosome = chromosome.x, start, end) %>%
   distinct()
+data_random_regions <- read_delim("random_genomic_intervals_l_1000_seed_1234_g_hg19.bed", 
+                                  delim = "\t", 
+                                  col_names = c("chromosome", "start", "end", NULL, NULL, NULL))
+data_random_regions <- nonOverlap(data_random_regions)
 
 length_enhancers <- sum(data_enhancers_fantom$end - data_enhancers_fantom$start)
 length_exons <- sum(data_exons_fantom$end - data_exons_fantom$start)
 length_exons_in_promoters <- sum(data_exons_in_promoters$end - data_exons_in_promoters$start)
 length_promoters <- sum(data_promoters_fantom$end - data_promoters_fantom$start) - length_exons_in_promoters
+length_random <- sum(data_random_regions$end -data_random_regions$start)
 
-table_length <- tibble(position = c("promoter", "enhancer", "exon", "others"),
-                       length = c(length_promoters, length_enhancers, length_exons, NA))
+table_length <- tibble(position = c("promoter", "enhancer", "exon", "others", "random"),
+                       length = c(length_promoters, length_enhancers, length_exons, NA, length_random))
 
 # check how fantom annotates the mutations
 data_icgc_wgs_to_join <- data_icgc_wgs %>%
@@ -138,10 +143,21 @@ mut_promoter <- data_promoters_fantom %>%
 mut_others <- data_icgc_wgs_to_join %>%
   dplyr::setdiff(bind_rows(mut_exon, mut_promoter, mut_enhancer))
 
+mut_random <- data_random_regions %>% 
+  genome_left_join(data_icgc_wgs_to_join) %>%
+  na.omit() %>%
+  select(chromosome = chromosome.y,
+         start = start.y,
+         end = end.y,
+         icgc_mutation_id,
+         icgc_donor_id) %>%
+  distinct()
+
 data_icgc_wgs_pos_fantom <- mutate(mut_exon, position = 'exon') %>%
   bind_rows(mutate(mut_promoter, position = 'promoter')) %>%
   bind_rows(mutate(mut_enhancer, position = 'enhancer')) %>%
   bind_rows(mutate(mut_others, position = 'others')) %>%
+  bind_rows(mutate(mut_random, position = 'random')) %>%
   select(icgc_mutation_id, icgc_donor_id, position)
 ```
 
@@ -212,17 +228,17 @@ kable(table_promoters_test)
 
 ```{r mutated enhancers, echo=F}
 data_enhancers_mutated <- data_enhancers_fantom %>% 
-  genome_inner_join(data_icgc_wgs_to_join) %>%
+  genome_left_join(data_icgc_wgs_to_join) %>%
   select(chromosome = chromosome.x,
          start = start.x,
          end = end.x,
          icgc_mutation_id,
          icgc_donor_id) %>%
+  mutate(count = ifelse(is.na(icgc_mutation_id), 0, 1)) %>%
   group_by(chromosome, start, end) %>%
-  tally(name = "count") %>%
+  summarise(count = sum(count)) %>%
   mutate(length = end - start) %>%
-  mutate(rate = count/length) %>%
-  arrange(desc(count)) %>%
+  mutate(mut_rate = count/length) %>%
   ungroup()
 ```
 
@@ -237,7 +253,9 @@ data_enh_per_gene <- data_eplinks %>%
 data_enhancers_affected <- data_enhancers_mutated %>%
   mutate(temp = paste(start, end, sep = "-")) %>%
   mutate(enhancer = paste(chromosome, temp, sep = ":")) %>%
-  select(enhancer, count, length, rate)
+  select(enhancer, count, length, mut_rate) %>%
+  arrange(desc(count))
+
 data_genes_affected <- data_enhancers_affected %>%
   inner_join(data_eplinks) %>%
   group_by(gene) %>%
