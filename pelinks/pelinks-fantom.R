@@ -1,19 +1,40 @@
-### In this code, we use primarily the enhancer-tss association file
+### In this code, we use the enhancer-tss association file
 ### from the Fantom project to build a promoter-enhancer links file. 
 ### This new file gives for each TSS, all the promoter and enhancer regions 
-### associatited with it.
+### associated with it.
 
 # source packages
 # if (!requireNamespace("BiocManager", quietly = TRUE))
 #   install.packages("BiocManager")
 # BiocManager::install("genomeIntervals")
+
+library(tidyverse)
+library(fuzzyjoin)
 library(genomeIntervals)
 library(GenomicRanges)
-library(tidyverse)
-library(dplyr)
-library(tidyr)
-library(fuzzyjoin)
 library(gtools)
+
+# self-defined functions
+
+isOverlap <- function(intervals, is.bed.format = T){
+  gr <- GRanges(seqnames = Rle(intervals$chromosome), 
+                ranges = IRanges(intervals$start + is.bed.format, intervals$end))
+  
+  print(ifelse(isDisjoint(gr), 
+               "there is no overlap between intervals", 
+               "there are overlaps between intervals"))
+}
+
+makeNonOverlap <- function(intervals, is.bed.format = T){
+  gr <- GRanges(seqnames = Rle(intervals$chromosome), 
+                ranges = IRanges(intervals$start, + is.bed.format, intervals$end))
+  gr_reduced <- GenomicRanges::reduce(gr)
+  outcome <- tibble(
+    chromosome = as.character(seqnames(gr_reduced)),
+    start = start(gr_reduced),
+    end = end(gr_reduced))
+  return(outcome)
+}
 
 # input path
 home.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks" # set home directory
@@ -44,14 +65,7 @@ e_all_rob <- unique(data_enhancers_rob$enhancer) #all robust enhancers
 e_all_per <- unique(data_enhancers_per$enhancer) #all permissive enhancers
 all(e_all_rob %in% e_all_per) #robust enhancers are included in permissive ones
 
-enhancers_check_result <- data_enhancers_per %>% 
-  genome_inner_join(data_enhancers_per, 
-                    by = c("chromosome", "start", "end")) %>% 
-  filter(start.x != start.y | end.x != end.y) %>% #exclude self
-  filter(start.x != end.y & start.y != end.x) #due to bed file interval format (,]
-print(ifelse(nrow(enhancers_check_result) == 0, 
-             "no overlap between enhancers", 
-             "there is overlap between enhancers"))
+isOverlap(data_enhancers_per) #check if enhancers overlap
 
 refseq_info_split <- strsplit(as.character(data_association_refseq$V4), split = ";")
 e_eplinks_refseq <- unlist(lapply(refseq_info_split, `[[`, 1))
@@ -75,34 +89,34 @@ length(unique(e_eplinks_refseq))/length(e_all_per) #percentage of enhancers that
 ## Part 2. Filter out enhancers that are too close to exons or tss , and build tss-enhancer links
 all_chromosomes <- unique(data_enhancers_per$chromosome)
 setwd(refseq.path)
-exons_region_refseq <- as_tibble(read.table("refseq_exons_171007.bed", sep = "\t")) %>%
+data_exons_refseq <- as_tibble(read.table("refseq_exons_171007.bed", sep = "\t")) %>%
   select(chromosome = V1, start = V2, end = V3) %>%
   filter(chromosome %in% all_chromosomes) %>%
   distinct()
-exons_region_ext <- exons_region_refseq %>%
+data_exons_refseq_ext <- data_exons_refseq %>%
   select(chromosome, start, end) %>%
   mutate(start = start - half_exon, end = end + half_exon) %>%
   distinct()
 
-tss_refseq <- as_tibble(read.table("refseq_TSS_hg19_170929.bed",
+data_tss_refseq <- as_tibble(read.table("refseq_TSS_hg19_170929.bed",
                                    header = F, sep = '\t')) %>%
   select(chromosome = V1, start = V2, end = V3, tss = V4) %>%
   filter(chromosome %in% all_chromosomes) %>%
   arrange(chromosome, start, end, tss) %>%
   distinct()
-tss_region_ext <- tss_refseq %>%
+data_tss_refseq_ext <- data_tss_refseq %>%
   select(chromosome, start, end) %>%
   mutate(start = start - half_tss, end = end + half_tss) %>%
   distinct()
 
 data_enhancers_exclude <- data_enhancers_per %>% 
-  genome_inner_join(tss_region_ext) %>%
+  genome_inner_join(data_tss_refseq_ext) %>%
   select(chromosome.x, start.x, end.x) %>%
   bind_rows(data_enhancers_per %>% 
-              genome_inner_join(exons_region_ext) %>%
+              genome_inner_join(data_exons_refseq_ext) %>%
               select(chromosome.x, start.x, end.x)) %>%
   distinct() %>%
-  dplyr::rename(chromosome = chromosome.x, start = start.x, end = end.x)
+  rename(chromosome = chromosome.x, start = start.x, end = end.x)
 
 data_enhancers_new <- data_enhancers_per %>%
   anti_join(data_enhancers_exclude)
@@ -114,14 +128,17 @@ refseq_info_split_filtered <- refseq_info_split[-list_drop]
 e_eplinks_refseq <- unlist(lapply(refseq_info_split_filtered, `[[`, 1)) 
 tss_eplinks_refseq <- unlist(lapply(refseq_info_split_filtered, `[[`, 2))
 g_eplinks_refseq <- unlist(lapply(refseq_info_split_filtered, `[[`, 3))
-tss_all <- unique(unlist(strsplit(tss_eplinks_refseq, split = ",")))
 
-# Build tss-enhancer links
 eplinks_filtered <- tibble(enhancer = e_eplinks_refseq, 
                            tss = tss_eplinks_refseq, 
                            gene = g_eplinks_refseq
 )
 
+# Get all the unique tss, note that some tss are no longer valid in RefSeq
+tss_all <- unique(unlist(strsplit(tss_eplinks_refseq, split = ",")))
+sum(!tss_all %in% data_tss_refseq$tss)  #254 TSS no longer exist in the current RefSeq database
+
+# Build tss-enhancer links (pelinks) from enhancer-tss links
 mapping_tss_enhancer <- eplinks_filtered %>% 
   select(tss, enhancer) %>%
   group_by(tss) %>%
@@ -130,15 +147,13 @@ mapping_tss_enhancer <- eplinks_filtered %>%
 mapping_tss_gene <- eplinks_filtered %>% 
   select(tss, gene) %>%
   distinct()
-# these genes are annotated by fantom file enhancer_tss_associations.bed
 
-# Locate the TSSs
-sum(!tss_all %in% tss_refseq$tss) #254 TSSs no longer exist in the current RefSeq database
+# For each TSS, find all enhancers linked to it, and denote by NA if none
 pelinks_raw_unnest <- mapping_tss_enhancer %>%
   mutate(tss = strsplit(tss, ",")) %>%
   unnest(tss)
 
-pelinks_sameTSS <- tss_refseq %>% 
+pelinks_sameTSS <- data_tss_refseq %>% 
   left_join(pelinks_raw_unnest, by = "tss") %>%
   group_by(chromosome, start, end, enhancer) %>%
   summarise(tss = paste0(tss, collapse = ";")) %>%
@@ -155,30 +170,35 @@ data_promoters_raw <- tibble(chromosome = pelinks_sameTSS$chromosome,
 # Add the promoter variable in pelinks_sameTSS
 pelinks_sameTSS <- pelinks_sameTSS %>% 
   inner_join(data_promoters_raw, by = "tss") %>%
-  select(chromosome = chromosome.x, tss_pos = start.x, enhancer, tss,
-         e_count, start = start.y, end = end.y) %>%
+  select(chromosome = chromosome.y, 
+         start = start.y,
+         end = end.y,
+         tss_pos = start.x, 
+         enhancer, 
+         tss,
+         e_count)  %>%
   mutate(promoter = paste0(chromosome, ":", start, "-", end)) %>%
   group_by(chromosome, tss, enhancer, e_count, tss_pos) %>%
   summarise(promoter = paste0(promoter, collapse = ";")) %>%
   ungroup() %>%
   select(tss, chromosome, tss_pos, promoter, enhancer, e_count)
 
-promoters_associated <- pelinks_sameTSS %>% select(tss, promoter)
-enhancers_associated <- pelinks_sameTSS %>% select(tss, enhancer)
-
 ## Output the result: promoter-enhancer links, all promoters, all enhancers, all exons
-data_promoters_output <- data_promoters_raw %>% select(chromosome, start, end)
-data_enhancers_output <- data_enhancers_new %>% select(chromosome, start, end)
-data_exons_output <- exons_region_refseq %>% select(chromosome, start, end)
+data_enhancers_output <- data_enhancers_new
+data_promoters_output <- data_promoters_raw %>% 
+  select(chromosome, start, end) %>%
+  mutate(promoter = paste0(chromosome, ":", start, "-", end))
+data_exons_output <- data_exons_refseq %>% 
+  mutate(exon = paste0(chromosome, ":", start, "-", end))
 
 setwd(output.path)
+write.csv(eplinks_filtered, "eplinks-fantom-filtered.csv", quote = F, row.names = F)
 write.csv(pelinks_sameTSS, "pelinks-fantom.csv", quote = F, row.names = F)
-write.csv(eplinks_filtered, "eplinks-filtered.csv", quote = F, row.names = F)
-write.table(data_promoters_output, "all_promoters_fantom.bed", 
-            quote = F, row.names = F, col.names = F, sep = "\t")
 write.table(data_enhancers_output, "all_enhancers_fantom.bed", 
             quote = F, row.names = F, col.names = F, sep = "\t")
-write.table(data_exons_output, "all_exons_fantom.bed", 
+write.table(data_promoters_output, "all_promoters_refseq.bed", 
+            quote = F, row.names = F, col.names = F, sep = "\t")
+write.table(data_exons_output, "all_exons_refseq.bed", 
             quote = F, row.names = F, col.names = F, sep = "\t")
 
 # # a histogram showing the distribution of enhancer length
