@@ -153,32 +153,25 @@ pelinks_raw_unnest <- mapping_tss_enhancer %>%
   mutate(tss = strsplit(tss, ",")) %>%
   unnest(tss)
 
+data_tss_refseq <- data_tss_refseq %>%
+  mutate(tss_pos = start) %>%
+  select(chromosome, tss_pos, tss)
+
 pelinks_sameTSS <- data_tss_refseq %>% 
   left_join(pelinks_raw_unnest, by = "tss") %>%
-  group_by(chromosome, start, end, enhancer) %>%
-  summarise(tss = paste0(tss, collapse = ";")) %>%
-  ungroup() %>%
   mutate(e_count = ifelse(is.na(enhancer), 0, sapply(strsplit(enhancer, ";"), length)))
 
 
 ## Part 3. Define raw promoters as the regions close to TSS and add it to pelinks
 data_promoters_raw <- tibble(chromosome = pelinks_sameTSS$chromosome, 
-                             start = pelinks_sameTSS$start - half_p, 
-                             end = pelinks_sameTSS$start + half_p,
+                             start = pelinks_sameTSS$tss_pos - half_p, 
+                             end = pelinks_sameTSS$tss_pos + half_p,
                              tss = pelinks_sameTSS$tss)
 
 # Add the promoter variable in pelinks_sameTSS
-pelinks_sameTSS <- pelinks_sameTSS %>% 
-  inner_join(data_promoters_raw, by = "tss") %>%
-  select(chromosome = chromosome.y, 
-         start = start.y,
-         end = end.y,
-         tss_pos = start.x, 
-         enhancer, 
-         tss,
-         e_count)  %>%
-  mutate(promoter = paste0(chromosome, ":", start, "-", end)) %>%
-  group_by(chromosome, tss, enhancer, e_count, tss_pos) %>%
+pelinks_sameTSS_complete <- pelinks_sameTSS %>% 
+  mutate(promoter = paste0(chromosome, ":", tss_pos - half_p, "-", tss_pos + half_p)) %>%
+  group_by(chromosome, tss, tss_pos, enhancer, e_count) %>%
   summarise(promoter = paste0(promoter, collapse = ";")) %>%
   ungroup() %>%
   select(tss, chromosome, tss_pos, promoter, enhancer, e_count)
@@ -193,7 +186,7 @@ data_exons_output <- data_exons_refseq %>%
 
 setwd(output.path)
 write.csv(eplinks_filtered, "eplinks-fantom-filtered.csv", quote = F, row.names = F)
-write.csv(pelinks_sameTSS, "pelinks-fantom.csv", quote = F, row.names = F)
+write.csv(pelinks_sameTSS_complete, "pelinks-fantom.csv", quote = F, row.names = F)
 write.table(data_enhancers_output, "all_enhancers_fantom.bed", 
             quote = F, row.names = F, col.names = F, sep = "\t")
 write.table(data_promoters_output, "all_promoters_refseq.bed", 
