@@ -15,8 +15,7 @@ library(GenomicRanges)
 library(gtools)
 
 # self-defined functions
-
-isOverlap <- function(intervals, is.bed.format = T){
+isOverlap <- function(intervals, is.bed.format = F){
   gr <- GRanges(seqnames = Rle(intervals$chromosome), 
                 ranges = IRanges(intervals$start + is.bed.format, intervals$end))
   
@@ -25,7 +24,7 @@ isOverlap <- function(intervals, is.bed.format = T){
                "there are overlaps between intervals"))
 }
 
-makeNonOverlap <- function(intervals, is.bed.format = T){
+makeNonOverlap <- function(intervals, is.bed.format = F){
   gr <- GRanges(seqnames = Rle(intervals$chromosome), 
                 ranges = IRanges(intervals$start, + is.bed.format, intervals$end))
   gr_reduced <- GenomicRanges::reduce(gr)
@@ -65,7 +64,7 @@ e_all_rob <- unique(data_enhancers_rob$enhancer) #all robust enhancers
 e_all_per <- unique(data_enhancers_per$enhancer) #all permissive enhancers
 all(e_all_rob %in% e_all_per) #robust enhancers are included in permissive ones
 
-isOverlap(data_enhancers_per) #check if enhancers overlap
+isOverlap(data_enhancers_per, is.bed.format = T) #check if enhancers overlap
 
 refseq_info_split <- strsplit(as.character(data_association_refseq$V4), split = ";")
 e_eplinks_refseq <- unlist(lapply(refseq_info_split, `[[`, 1))
@@ -187,11 +186,11 @@ data_exons_output <- data_exons_refseq %>%
 setwd(output.path)
 write.csv(eplinks_filtered, "eplinks-fantom-filtered.csv", quote = F, row.names = F)
 write.csv(pelinks_sameTSS_complete, "pelinks-fantom.csv", quote = F, row.names = F)
-write.table(data_enhancers_output, "all_enhancers_fantom.bed", 
+write.table(data_enhancers_output, "all_enhancers_fantom.txt", 
             quote = F, row.names = F, col.names = F, sep = "\t")
-write.table(data_promoters_output, "all_promoters_refseq.bed", 
+write.table(data_promoters_output, "all_promoters_refseq.txt", 
             quote = F, row.names = F, col.names = F, sep = "\t")
-write.table(data_exons_output, "all_exons_refseq.bed", 
+write.table(data_exons_output, "all_exons_refseq.txt", 
             quote = F, row.names = F, col.names = F, sep = "\t")
 
 # # a histogram showing the distribution of enhancer length
