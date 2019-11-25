@@ -133,10 +133,17 @@ tss_all <- unique(unlist(strsplit(tss_eplinks_refseq, split = ",")))
 sum(!tss_all %in% data_tss_refseq$tss)  #254 TSS no longer exist in the current RefSeq database
 
 # Build tss-enhancer links (pelinks) from enhancer-tss links
+# use valid tss in RefSeq only
 eplinks_filtered <- tibble(enhancer = e_eplinks_refseq, 
                            tss = tss_eplinks_refseq, 
                            gene = g_eplinks_refseq) %>%
-  mutate(tss = gsub(",", ";", tss))
+  mutate(tss = strsplit(tss, ",")) %>%
+  unnest(tss) %>%
+  filter(tss %in% data_tss_refseq$tss) %>%
+  group_by(enhancer, gene) %>%
+  summarise(tss = paste0(tss, collapse=";")) %>%
+  select(enhancer, tss, gene) %>%
+  ungroup()
 
 mapping_tss_enhancer <- eplinks_filtered %>% 
   select(tss, enhancer) %>%
@@ -188,7 +195,7 @@ data_exons_output <- data_exons_refseq %>%
 
 setwd(output.path)
 write.csv(eplinks_filtered, "eplinks-fantom-filtered.csv", quote = F, row.names = F)
-write.csv(pelinks_sameTSS_complete, "pelinks-fantom.csv", quote = F, row.names = F)
+write.csv(pelinks_sameTSS_complete, "pelinks-fantom-filtered.csv", quote = F, row.names = F)
 write.table(data_enhancers_output, "all_enhancers_fantom.txt", 
             quote = F, row.names = F, col.names = F, sep = "\t")
 write.table(data_promoters_output, "all_promoters_refseq.txt", 
