@@ -176,12 +176,15 @@ pelinks_sameTSS_complete <- pelinks_sameTSS %>%
   select(tss, chromosome, tss_pos, promoter, enhancer, e_count)
 
 ## Output the result: promoter-enhancer links, all promoters, all enhancers, all exons
-data_enhancers_output <- data_enhancers_new
+data_enhancers_output <- data_enhancers_new %>%
+  mutate(start = start + 1)
 data_promoters_output <- data_promoters_raw %>% 
   select(chromosome, start, end) %>%
-  mutate(promoter = paste0(chromosome, ":", start, "-", end))
+  mutate(promoter = paste0(chromosome, ":", start, "-", end)) %>%
+  mutate(start = start + 1)
 data_exons_output <- data_exons_refseq %>% 
-  mutate(exon = paste0(chromosome, ":", start, "-", end))
+  mutate(exon = paste0(chromosome, ":", start, "-", end)) %>%
+  mutate(start = start + 1)
 
 setwd(output.path)
 write.csv(eplinks_filtered, "eplinks-fantom-filtered.csv", quote = F, row.names = F)
