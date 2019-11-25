@@ -128,16 +128,16 @@ e_eplinks_refseq <- unlist(lapply(refseq_info_split_filtered, `[[`, 1))
 tss_eplinks_refseq <- unlist(lapply(refseq_info_split_filtered, `[[`, 2))
 g_eplinks_refseq <- unlist(lapply(refseq_info_split_filtered, `[[`, 3))
 
-eplinks_filtered <- tibble(enhancer = e_eplinks_refseq, 
-                           tss = tss_eplinks_refseq, 
-                           gene = g_eplinks_refseq
-)
-
 # Get all the unique tss, note that some tss are no longer valid in RefSeq
 tss_all <- unique(unlist(strsplit(tss_eplinks_refseq, split = ",")))
 sum(!tss_all %in% data_tss_refseq$tss)  #254 TSS no longer exist in the current RefSeq database
 
 # Build tss-enhancer links (pelinks) from enhancer-tss links
+eplinks_filtered <- tibble(enhancer = e_eplinks_refseq, 
+                           tss = tss_eplinks_refseq, 
+                           gene = g_eplinks_refseq) %>%
+  mutate(tss = gsub(",", ";", tss))
+
 mapping_tss_enhancer <- eplinks_filtered %>% 
   select(tss, enhancer) %>%
   group_by(tss) %>%
@@ -149,7 +149,7 @@ mapping_tss_gene <- eplinks_filtered %>%
 
 # For each TSS, find all enhancers linked to it, and denote by NA if none
 pelinks_raw_unnest <- mapping_tss_enhancer %>%
-  mutate(tss = strsplit(tss, ",")) %>%
+  mutate(tss = strsplit(tss, ";")) %>%
   unnest(tss)
 
 data_tss_refseq <- data_tss_refseq %>%
