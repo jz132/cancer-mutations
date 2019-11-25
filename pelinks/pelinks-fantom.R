@@ -26,7 +26,7 @@ isOverlap <- function(intervals, is.bed.format = F){
 
 makeNonOverlap <- function(intervals, is.bed.format = F){
   gr <- GRanges(seqnames = Rle(intervals$chromosome), 
-                ranges = IRanges(intervals$start, + is.bed.format, intervals$end))
+                ranges = IRanges(intervals$start + is.bed.format, intervals$end))
   gr_reduced <- GenomicRanges::reduce(gr)
   outcome <- tibble(
     chromosome = as.character(seqnames(gr_reduced)),
