@@ -27,6 +27,7 @@ icgc.data.path <- "/Users/jz132/Desktop/Gordanlab/Data/ICGC"
 genomic.interval.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks"
 refseq.data.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks/RefSeq"
 output.path <- "/Users/jz132/r_projects/cancer-mutations/ssm-background/"
+figure.path <- "/Users/jz132/r_projects/cancer-mutations/ssm-background/Figures/"
 filename <- "simple_somatic_mutation.open.LIRI-JP.tsv"
 
 genome <- getBSgenome("BSgenome.Hsapiens.UCSC.hg19")
@@ -67,15 +68,16 @@ if(!all(data_icgc_wgs$mutated_from_allele == data_icgc_wgs$reference_genome_alle
   warning("reference genome allele is not the same as mutated from allele")
 }
   
-
 # import genomic coordinates of enhancers and links between enhancers and tss
 setwd(genomic.interval.path)
-mapping_eplinks <- read_delim("eplinks-filtered.csv", delim = ",") %>%
-  select(enhancer, gene = tss)
-data_enhancers_fantom <- read_delim("all_enhancers_fantom.bed", delim = "\t",
-                                    col_names = c("chromosome", "start", "end"))
+data_eplinks_short <- read_delim("eplinks-fantom-filtered.csv", delim = ",")
+data_eplinks_long <- data_eplinks_short %>%
+  mutate(tss = strsplit(tss, ";")) %>%
+  unnest(tss)
+data_enhancers_fantom <- read_delim("all_enhancers_fantom.txt", delim = "\t",
+                                    col_names = c("chromosome", "start", "end", "enhancer"))
 
-# check how fantom annotates the mutations
+# count the number of mutations in each enhancer
 data_icgc_wgs_to_join <- data_icgc_wgs %>%
   filter(!is.na(consequence_type)) %>% 
   select(chromosome = chromosome,
@@ -87,18 +89,18 @@ data_icgc_wgs_to_join <- data_icgc_wgs %>%
          mut = mutated_to_allele) %>%
   distinct()
 
-# number of mutation in each enhancer
 data_enhancers_mutated <- data_enhancers_fantom %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   select(chromosome = chromosome.x,
          start = start.x,
          end = end.x,
+         enhancer,
          icgc_mutation_id,
          icgc_donor_id) %>%
   mutate(count = ifelse(is.na(icgc_mutation_id), 0, 1)) %>%
-  group_by(chromosome, start, end) %>%
+  group_by(chromosome, start, end, enhancer) %>%
   summarise(count = sum(count)) %>%
-  mutate(length = end - start) %>%
+  mutate(length = end - start + 1) %>%
   ungroup()
 
 # enhancer mutations
@@ -113,21 +115,63 @@ mut_enhancer <- data_enhancers_fantom %>%
          ref,
          mut) %>%
   distinct()
-mut_enhancer_bg <- mut_enhancer %>%
-  mutate(start = start - 1,
-         end = end + 1)
 
+# enhancer sequences and trinucleotide frequencies
 seq_enhancers_fantom <- getSeq(genome, names = data_enhancers_fantom$chromosome,
                                start = data_enhancers_fantom$start,
                                end = data_enhancers_fantom$end)
 mat_tri <- reverseMerge(trinucleotideFrequency(seq_enhancers_fantom))
-freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count") %>%
-  mutate(percentage = 100*count/sum(count))
+freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count")
 
-seq_enhancer_mutations <- getSeq(genome, names = mut_enhancer_bg$chromosome,
-                                 start = mut_enhancer_bg$start,
-                                 end = mut_enhancer_bg$end)
-mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_enhancer_mutations))
+setwd(figure.path)
+png(file = "enhancer_trinucleotide_dist.png", width = 1200, height = 800, res = 160)
+ggplot(data = freq_tri, aes(x = trinucleotide, y = count)) + 
+  geom_col() + 
+  ggtitle("LIRI-JP enhancer sequence") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme(axis.text.x = element_text(angle = 45))
+dev.off()
+
+# trinucleotide background of the mutations
+mut_enhancer_bg <- mut_enhancer %>%
+  mutate(start = start - 1,
+         end = end + 1)
+
+# frequencies of trinucleotides that are mutated
+seq_enhancer_mutations_ref <- getSeq(genome, names = mut_enhancer_bg$chromosome,
+                                     start = mut_enhancer_bg$start,
+                                     end = mut_enhancer_bg$end)
+seq_enhancer_mutations_mut <- replaceLetterAt(seq_enhancer_mutations_ref, 
+                                              at = matrix(c(F, T, F), 
+                                                          nrow = length(seq_enhancer_mutations_ref),
+                                                          ncol = 3,
+                                                          byrow = T), 
+                                              mut_enhancer_bg$mut)
+table_mutation_tri <- tibble(
+  ref = as.character(seq_enhancer_mutations_ref),
+  ref_rev = as.character(reverseComplement(seq_enhancer_mutations_ref)),
+  mut = as.character(seq_enhancer_mutations_mut),
+  mut_rev =  as.character(reverseComplement(seq_enhancer_mutations_mut)),
+) %>%
+  mutate(ref = ifelse(ref < ref_rev, ref, ref_rev),
+         mut = ifelse(ref < ref_rev, mut, mut_rev)) %>%
+  group_by(ref, mut) %>%
+  tally(name = "count")
+
+setwd(figure.path)
+png(file = "enhancer_mutated_trinucleotide_dist.png", width = 1200, height = 800, res = 160)
+ggplot(data = table_mutation_tri, mapping = aes(x = ref, y = count, 
+                                                fill = paste0(substr(ref, 2, 2),
+                                                              "->",
+                                                              substr(mut, 2, 2)))) + 
+  geom_col() + 
+  labs(fill = "Mutation") +
+  ggtitle("LIRI-JP enhancer mutation") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme(axis.text.x = element_text(angle = 45))
+dev.off()
+
+mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_enhancer_mutations_ref))
 freq_tri_mut <- enframe(colSums(mat_tri_mut), name = "trinucleotide", value = "mut_count") %>%
   arrange(desc(mut_count))
 
@@ -138,26 +182,44 @@ freq_tri <- freq_tri %>%
 data_enhancers_mutated <- data_enhancers_mutated %>%
   mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors))
 
-# annotate by refseq
-setwd(refseq.data.path)
-mapping_hgnc <- read_delim("refseq_to_hgnc.txt", delim = "\t") %>%
-  select(hgnc_symbol = `Approved symbol`,
-         refseq_id = `RefSeq IDs`,
-         refseq_id_ncbi = `RefSeq(supplied by NCBI)`) %>%
-  pivot_longer(cols = refseq_id:refseq_id_ncbi, values_to = "gene") %>%
-  select(hgnc_symbol, gene) %>%
-  na.omit() %>%
-  distinct()
-
+# per gene
 data_enhancers_mutated_annotated <- data_enhancers_mutated %>%
-  mutate(enhancer = paste(chromosome, paste(start, end, sep = "-"), sep = ":")) %>%
-  inner_join(mapping_eplinks) %>%
-  inner_join(mapping_hgnc) %>%
-  select(-enhancer)
-
-table_enhancer_mutation_by_gene <- data_enhancers_mutated_annotated %>% 
-  group_by(hgnc_symbol) %>% 
+  inner_join(data_eplinks_short)
+table_enhancer_mutation_by_gene <- data_enhancers_mutated_annotated %>%
+  group_by(gene) %>%
   summarise(count = sum(count),
             enhancer_length = sum(length),
-            expected_count = sum(expected_count)) %>% 
-  arrange(desc(count)) 
+            expected_count = sum(expected_count)) %>%
+  arrange(desc(count))
+
+# per tss
+data_enhancers_mutated_annotated <- data_enhancers_mutated %>%
+  inner_join(data_eplinks_long)
+table_enhancer_mutation_by_tss <- data_enhancers_mutated_annotated %>%
+  group_by(tss) %>%
+  summarise(count = sum(count),
+            enhancer_length = sum(length),
+            expected_count = sum(expected_count)) %>%
+  arrange(desc(count))
+
+# old code to check if refseq annotation is the same as fantom gene annotation
+# setwd(refseq.data.path)
+# mapping_hgnc <- read_delim("refseq_to_hgnc.txt", delim = "\t") %>%
+#   select(hgnc_symbol = `Approved symbol`,
+#          refseq_id = `RefSeq IDs`,
+#          refseq_id_ncbi = `RefSeq(supplied by NCBI)`) %>%
+#   pivot_longer(cols = refseq_id:refseq_id_ncbi, values_to = "tss") %>%
+#   select(hgnc_symbol, tss) %>%
+#   na.omit() %>%
+#   distinct()
+# 
+# data_enhancers_mutated_annotated <- data_enhancers_mutated %>%
+#   inner_join(data_eplinks_long) %>%
+#   inner_join(mapping_hgnc)
+# 
+# table_enhancer_mutation_by_gene <- data_enhancers_mutated_annotated %>%
+#   group_by(hgnc_symbol) %>%
+#   summarise(count = sum(count),
+#             enhancer_length = sum(length),
+#             expected_count = sum(expected_count)) %>%
+#   arrange(desc(count))

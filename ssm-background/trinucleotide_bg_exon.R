@@ -27,6 +27,7 @@ icgc.data.path <- "/Users/jz132/Desktop/Gordanlab/Data/ICGC"
 genomic.interval.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks"
 refseq.data.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks/RefSeq"
 output.path <- "/Users/jz132/r_projects/cancer-mutations/ssm-background/"
+figure.path <- "/Users/jz132/r_projects/cancer-mutations/ssm-background/Figures/"
 filename <- "simple_somatic_mutation.open.LIRI-JP.tsv"
 
 genome <- getBSgenome("BSgenome.Hsapiens.UCSC.hg19")
@@ -67,14 +68,13 @@ if(!all(data_icgc_wgs$mutated_from_allele == data_icgc_wgs$reference_genome_alle
   warning("reference genome allele is not the same as mutated from allele")
 }
 
-
 # import genomic coordinates of exons
 setwd(genomic.interval.path)
-data_exons_fantom <- read_delim("all_exons_fantom.bed", delim = "\t", 
-                                col_names = c("chromosome", "start", "end")) %>%
+data_exons_fantom <- read_delim("all_exons_refseq.txt", delim = "\t", 
+                                col_names = c("chromosome", "start", "end", "exon")) %>%
   arrange(chromosome, start, end)
 
-# check how fantom annotates the mutations
+# count the number of mutations in each exon
 data_icgc_wgs_to_join <- data_icgc_wgs %>%
   filter(!is.na(consequence_type)) %>% 
   select(chromosome = chromosome,
@@ -86,18 +86,18 @@ data_icgc_wgs_to_join <- data_icgc_wgs %>%
          mut = mutated_to_allele) %>%
   distinct()
 
-# number of mutation in each exon
 data_exons_mutated <- data_exons_fantom %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   select(chromosome = chromosome.x,
          start = start.x,
          end = end.x,
+         exon,
          icgc_mutation_id,
          icgc_donor_id) %>%
   mutate(count = ifelse(is.na(icgc_mutation_id), 0, 1)) %>%
-  group_by(chromosome, start, end) %>%
+  group_by(chromosome, start, end, exon) %>%
   summarise(count = sum(count)) %>%
-  mutate(length = end - start) %>%
+  mutate(length = end - start + 1) %>%
   ungroup()
 
 # exon mutations
@@ -112,21 +112,63 @@ mut_exon <- data_exons_fantom %>%
          ref,
          mut) %>%
   distinct()
-mut_exon_bg <- mut_exon %>%
-  mutate(start = start - 1,
-         end = end + 1)
 
+# exon sequences and trinucleotide frequencies
 seq_exons_fantom <- getSeq(genome, names = data_exons_fantom$chromosome,
                                start = data_exons_fantom$start,
                                end = data_exons_fantom$end)
 mat_tri <- reverseMerge(trinucleotideFrequency(seq_exons_fantom))
-freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count") %>%
-  mutate(percentage = 100*count/sum(count))
+freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count")
 
-seq_exon_mutations <- getSeq(genome, names = mut_exon_bg$chromosome,
-                                 start = mut_exon_bg$start,
-                                 end = mut_exon_bg$end)
-mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_exon_mutations))
+setwd(figure.path)
+png(file = "exon_trinucleotide_dist.png", width = 1200, height = 800, res = 160)
+ggplot(data = freq_tri, aes(x = trinucleotide, y = count)) + 
+  geom_col() + 
+  ggtitle("LIRI-JP exon sequence") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme(axis.text.x = element_text(angle = 45))
+dev.off()
+
+# trinucleotide background of the mutations
+mut_exon_bg <- mut_exon %>%
+  mutate(start = start - 1,
+         end = end + 1)
+
+# frequencies of trinucleotides that are mutated
+seq_exon_mutations_ref <- getSeq(genome, names = mut_exon_bg$chromosome,
+                                     start = mut_exon_bg$start,
+                                     end = mut_exon_bg$end)
+seq_exon_mutations_mut <- replaceLetterAt(seq_exon_mutations_ref, 
+                                              at = matrix(c(F, T, F), 
+                                                          nrow = length(seq_exon_mutations_ref),
+                                                          ncol = 3,
+                                                          byrow = T), 
+                                              mut_exon_bg$mut)
+table_mutation_tri <- tibble(
+  ref = as.character(seq_exon_mutations_ref),
+  ref_rev = as.character(reverseComplement(seq_exon_mutations_ref)),
+  mut = as.character(seq_exon_mutations_mut),
+  mut_rev =  as.character(reverseComplement(seq_exon_mutations_mut)),
+) %>%
+  mutate(ref = ifelse(ref < ref_rev, ref, ref_rev),
+         mut = ifelse(ref < ref_rev, mut, mut_rev)) %>%
+  group_by(ref, mut) %>%
+  tally(name = "count")
+
+setwd(figure.path)
+png(file = "exon_mutated_trinucleotide_dist.png", width = 1200, height = 800, res = 160)
+ggplot(data = table_mutation_tri, mapping = aes(x = ref, y = count, 
+                                                fill = paste0(substr(ref, 2, 2),
+                                                              "->",
+                                                              substr(mut, 2, 2)))) + 
+  geom_col() + 
+  labs(fill = "Mutation") +
+  ggtitle("LIRI-JP exon mutation") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme(axis.text.x = element_text(angle = 45))
+dev.off()
+
+mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_exon_mutations_ref))
 freq_tri_mut <- enframe(colSums(mat_tri_mut), name = "trinucleotide", value = "mut_count") %>%
   arrange(desc(mut_count))
 
@@ -140,27 +182,35 @@ data_exons_mutated <- data_exons_mutated %>%
 # annotate by refseq 
 setwd(refseq.data.path)
 mapping_hgnc <- read_delim("refseq_to_hgnc.txt", delim = "\t") %>%
-  select(hgnc_symbol = `Approved symbol`,
+  select(gene = `Approved symbol`,
          refseq_id = `RefSeq IDs`,
          refseq_id_ncbi = `RefSeq(supplied by NCBI)`) %>%
-  pivot_longer(cols = refseq_id:refseq_id_ncbi, values_to = "gene") %>%
-  select(hgnc_symbol, gene) %>%
+  pivot_longer(cols = refseq_id:refseq_id_ncbi, values_to = "tss") %>%
+  select(gene, tss) %>%
   na.omit() %>%
   distinct()
 mapping_refseq_exon <- read_delim("refseq_exons_171007.bed", delim = '\t',
                              col_names = F) %>%
-  select(1:4) %>%
-  rename(chromosome = "X1", start = "X2", end = "X3", gene = "X4") %>%
-  mutate(gene = gsub("_exon.*$", "", gene))
+  select(chromosome = "X1", start = "X2", end = "X3", tss = "X4") %>%
+  mutate(tss = gsub("_exon.*$", "", tss))
 
 data_exons_mutated_annotated <- data_exons_mutated %>%
   inner_join(mapping_refseq_exon) %>%
   inner_join(mapping_hgnc)
 
-table_exon_mutation_by_gene <- data_exons_mutated_annotated %>% 
-  group_by(hgnc_symbol) %>% 
+# per gene
+table_exon_mutation_by_gene <- data_exons_mutated_annotated %>%
+  group_by(gene) %>%
   summarise(count = sum(count),
             exon_length = sum(length),
-            expected_count = sum(expected_count)) %>% 
-  arrange(desc(count)) 
+            expected_count = sum(expected_count)) %>%
+  arrange(desc(count))
+
+# per tss
+table_exon_mutation_by_tss <- data_exons_mutated_annotated %>%
+  group_by(tss) %>%
+  summarise(count = sum(count),
+            exon_length = sum(length),
+            expected_count = sum(expected_count)) %>%
+  arrange(desc(count))
 
