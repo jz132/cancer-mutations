@@ -28,7 +28,9 @@ genomic.interval.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks"
 refseq.data.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks/RefSeq"
 output.path <- "/Users/jz132/r_projects/cancer-mutations/ssm-background/"
 figure.path <- "/Users/jz132/r_projects/cancer-mutations/ssm-background/Figures/"
-filename <- "simple_somatic_mutation.open.LIRI-JP.tsv"
+
+datasetname <- "BRCA-EU"
+filename <- paste0("simple_somatic_mutation.open.", datasetname, ".tsv")
 
 genome <- getBSgenome("BSgenome.Hsapiens.UCSC.hg19")
 
@@ -121,10 +123,11 @@ mat_tri <- reverseMerge(trinucleotideFrequency(seq_exons_refseq))
 freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count")
 
 setwd(figure.path)
-png(file = "exon_trinucleotide_dist.png", width = 1200, height = 800, res = 160)
+png(file = paste0("exon_trinucleotide_dist_", datasetname, ".png"), 
+    width = 1200, height = 800, res = 160)
 ggplot(data = freq_tri, aes(x = trinucleotide, y = count)) + 
   geom_col() + 
-  ggtitle("LIRI-JP exon sequence") + 
+  ggtitle(paste(datasetname, "exon sequence")) + 
   theme(plot.title = element_text(hjust = 0.5)) + 
   theme(axis.text.x = element_text(angle = 45))
 dev.off()
@@ -156,14 +159,15 @@ table_mutation_tri <- tibble(
   tally(name = "count")
 
 setwd(figure.path)
-png(file = "exon_mutated_trinucleotide_dist.png", width = 1200, height = 800, res = 160)
+png(file = paste0("exon_mutated_trinucleotide_dist_", datasetname, ".png"), 
+    width = 1200, height = 800, res = 160)
 ggplot(data = table_mutation_tri, mapping = aes(x = ref, y = count, 
                                                 fill = paste0(substr(ref, 2, 2),
                                                               "->",
                                                               substr(mut, 2, 2)))) + 
   geom_col() + 
   labs(fill = "Mutation") +
-  ggtitle("LIRI-JP exon mutation") + 
+  ggtitle(paste(datasetname, "exon mutation")) + 
   theme(plot.title = element_text(hjust = 0.5)) + 
   theme(axis.text.x = element_text(angle = 45))
 dev.off()
