@@ -180,7 +180,9 @@ freq_tri <- freq_tri %>%
   mutate(mut_rate = mut_count/count/num_donors)
 
 data_enhancers_mutated <- data_enhancers_mutated %>%
-  mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors))
+  mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors),
+         var_count = as.vector(mat_tri %*% 
+                                 freq_tri$mut_rate*(1-freq_tri$mut_rate) * num_donors))
 
 # per gene
 data_enhancers_mutated_annotated <- data_enhancers_mutated %>%
@@ -189,7 +191,9 @@ table_enhancer_mutation_by_gene <- data_enhancers_mutated_annotated %>%
   group_by(gene) %>%
   summarise(count = sum(count),
             enhancer_length = sum(length),
-            expected_count = sum(expected_count)) %>%
+            expected_count = sum(expected_count),
+            var_count = sum(var_count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
   arrange(desc(count))
 
 # per tss
@@ -199,7 +203,9 @@ table_enhancer_mutation_by_tss <- data_enhancers_mutated_annotated %>%
   group_by(tss) %>%
   summarise(count = sum(count),
             enhancer_length = sum(length),
-            expected_count = sum(expected_count)) %>%
+            expected_count = sum(expected_count),
+            var_count = sum(var_count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
   arrange(desc(count))
 
 # old code to check if refseq annotation is the same as fantom gene annotation

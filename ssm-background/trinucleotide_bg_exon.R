@@ -70,7 +70,7 @@ if(!all(data_icgc_wgs$mutated_from_allele == data_icgc_wgs$reference_genome_alle
 
 # import genomic coordinates of exons
 setwd(genomic.interval.path)
-data_exons_fantom <- read_delim("all_exons_refseq.txt", delim = "\t", 
+data_exons_refseq <- read_delim("all_exons_refseq.txt", delim = "\t", 
                                 col_names = c("chromosome", "start", "end", "exon")) %>%
   arrange(chromosome, start, end)
 
@@ -86,7 +86,7 @@ data_icgc_wgs_to_join <- data_icgc_wgs %>%
          mut = mutated_to_allele) %>%
   distinct()
 
-data_exons_mutated <- data_exons_fantom %>% 
+data_exons_mutated <- data_exons_refseq %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   select(chromosome = chromosome.x,
          start = start.x,
@@ -101,7 +101,7 @@ data_exons_mutated <- data_exons_fantom %>%
   ungroup()
 
 # exon mutations
-mut_exon <- data_exons_fantom %>% 
+mut_exon <- data_exons_refseq %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   na.omit() %>%
   select(chromosome = chromosome.y,
@@ -114,10 +114,10 @@ mut_exon <- data_exons_fantom %>%
   distinct()
 
 # exon sequences and trinucleotide frequencies
-seq_exons_fantom <- getSeq(genome, names = data_exons_fantom$chromosome,
-                               start = data_exons_fantom$start,
-                               end = data_exons_fantom$end)
-mat_tri <- reverseMerge(trinucleotideFrequency(seq_exons_fantom))
+seq_exons_refseq <- getSeq(genome, names = data_exons_refseq$chromosome,
+                               start = data_exons_refseq$start,
+                               end = data_exons_refseq$end)
+mat_tri <- reverseMerge(trinucleotideFrequency(seq_exons_refseq))
 freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count")
 
 setwd(figure.path)

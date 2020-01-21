@@ -70,12 +70,12 @@ if(!all(data_icgc_wgs$mutated_from_allele == data_icgc_wgs$reference_genome_alle
 
 # import genomic coordinates of promoters
 setwd(genomic.interval.path)
-data_promoters_fantom <- read_delim("all_promoters_refseq.txt", delim = "\t", 
+data_promoters_refseq <- read_delim("all_promoters_refseq.txt", delim = "\t", 
                                 col_names = c("chromosome", "start", "end", "promoter")) %>%
   arrange(chromosome, start, end) %>%
   distinct()
 
-data_promoters_fantom <- data_promoters_fantom %>%
+data_promoters_refseq <- data_promoters_refseq %>%
   mutate(end = end - 1000) # for now, we only consider the part upstream of tss
 
 # count the number of mutations in each promoter
@@ -90,7 +90,7 @@ data_icgc_wgs_to_join <- data_icgc_wgs %>%
          mut = mutated_to_allele) %>%
   distinct()
 
-data_promoters_mutated <- data_promoters_fantom %>% 
+data_promoters_mutated <- data_promoters_refseq %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   select(chromosome = chromosome.x,
          start = start.x,
@@ -105,7 +105,7 @@ data_promoters_mutated <- data_promoters_fantom %>%
   ungroup()
 
 # promoter mutations
-mut_promoter <- data_promoters_fantom %>% 
+mut_promoter <- data_promoters_refseq %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   na.omit() %>%
   select(chromosome = chromosome.y,
@@ -118,10 +118,10 @@ mut_promoter <- data_promoters_fantom %>%
   distinct()
 
 # promoter sequences and trinucleotide frequencies
-seq_promoters_fantom <- getSeq(genome, names = data_promoters_fantom$chromosome,
-                               start = data_promoters_fantom$start,
-                               end = data_promoters_fantom$end)
-mat_tri <- reverseMerge(trinucleotideFrequency(seq_promoters_fantom))
+seq_promoters_refseq <- getSeq(genome, names = data_promoters_refseq$chromosome,
+                               start = data_promoters_refseq$start,
+                               end = data_promoters_refseq$end)
+mat_tri <- reverseMerge(trinucleotideFrequency(seq_promoters_refseq))
 freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count")
 
 setwd(figure.path)
@@ -181,7 +181,9 @@ freq_tri <- freq_tri %>%
   mutate(mut_rate = mut_count/count/num_donors)
 
 data_promoters_mutated <- data_promoters_mutated %>%
-  mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors))
+  mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors),
+         var_count = as.vector(mat_tri %*% 
+                                 freq_tri$mut_rate*(1-freq_tri$mut_rate) * num_donors))
 
 # annotate by refseq 
 setwd(refseq.data.path)
@@ -209,7 +211,9 @@ table_promoter_mutation_by_gene <- data_promoters_mutated_annotated %>%
   group_by(gene) %>%
   summarise(count = sum(count),
             promoter_length = sum(length),
-            expected_count = sum(expected_count)) %>%
+            expected_count = sum(expected_count),
+            var_count = sum(var_count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
   arrange(desc(count))
 
 # per tss
@@ -217,6 +221,8 @@ table_promoter_mutation_by_tss <- data_promoters_mutated_annotated %>%
   group_by(tss) %>%
   summarise(count = sum(count),
             promoter_length = sum(length),
-            expected_count = sum(expected_count)) %>%
+            expected_count = sum(expected_count),
+            var_count = sum(var_count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
   arrange(desc(count))
 
