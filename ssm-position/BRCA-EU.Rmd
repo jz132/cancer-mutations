@@ -10,6 +10,8 @@ library(fuzzyjoin)
 library(knitr)
 library(scales)
 library(GenomicRanges)
+library(Biostrings)
+library(BSgenome.Hsapiens.UCSC.hg19)
 ```
 
 ```{r functions, echo=FALSE}
@@ -32,13 +34,31 @@ makeNonOverlap <- function(intervals, is.bed.format = F){
     end = end(gr_reduced))
   return(outcome)
 }
+
+reverseMerge <- function(count_mat){
+  features <- colnames(count_mat)
+  list_drop <- NULL
+  for(feature in features){
+    reverse_feature <- as.character(reverseComplement(DNAString(feature)))
+    if(feature < reverse_feature)
+      count_mat[,feature] <- count_mat[,feature] + count_mat[,reverse_feature]
+    else if(feature > reverse_feature)
+      list_drop <- c(list_drop, which(features == feature))
+    #if palindromic then feature == reverse_feature, and we count only once
+  }
+  count_mat <- count_mat[, -list_drop]
+  return(count_mat)
+}
 ```
 
 ```{r import and transform data, echo=FALSE}
 # file paths and file names
 icgc.data.path <- "/Users/jz132/Desktop/Gordanlab/Data/ICGC"
 genomic.interval.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks"
+refseq.data.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks/RefSeq"
 filename <- "simple_somatic_mutation.open.BRCA-EU.tsv"
+
+genome <- getBSgenome("BSgenome.Hsapiens.UCSC.hg19")
 
 keep_cols <- c("icgc_mutation_id", 
                "icgc_donor_id", 
@@ -74,15 +94,22 @@ num_donors <- length(data_icgc_wgs %>% distinct(icgc_donor_id) %>% pull())
 num_mutations <- length(data_icgc_wgs %>% distinct(icgc_mutation_id, icgc_donor_id) %>% pull())
 ```
 
-There are `r num_donors` donors with WGS data in the study. The total number of single mutations is `r num_mutations`. Here, we use enhancers from the FANTOM project, exons from RefSeq, and promoters inferred from RefSeq tss. The three types of genomic regions are defined so that there is no overlap among them. We also take 100,000 random intervals from human genome. Each interval is 1,000 bp long.
+There are `r num_donors` donors with WGS data in the study. The total number of single mutations is `r num_mutations`. Here, we use enhancers from the FANTOM project, exons from RefSeq, and promoters inferred from RefSeq TSS. The three types of genomic region are defined so that there is no overlap among them. We also take 100,000 random intervals from human genome, the lengths of which are 1,000 bp each. Here we compare the mutation rates across each type of region.
+
+## Mutation rates in different genomic regions
 
 ```{r fantom annotation, echo=FALSE}
 # import genomic coordinates of promoters, enhancers, and exons
 setwd(genomic.interval.path)
 data_enhancers_fantom <- read_delim("all_enhancers_fantom.txt", delim = "\t",
                                     col_names = c("chromosome", "start", "end", "enhancer"))
-data_promoters_refseq <- read_delim("all_promoters_refseq.txt", delim = "\t",
-                                    col_names = c("chromosome", "start", "end", "promoter"))
+
+data_promoters_refseq <- read_delim("all_promoters_refseq.txt", delim = "\t", 
+                                col_names = c("chromosome", "start", "end", "promoter")) %>%
+  arrange(chromosome, start, end) %>%
+  distinct() %>%
+  mutate(end = end - 1000) # for now, we only consider the part upstream of tss
+
 data_exons_refseq <- read_delim("all_exons_refseq.txt", delim = "\t", 
                                 col_names = c("chromosome", "start", "end", "exon"))
 data_random_regions <- read_delim("random_genomic_intervals_l_1000_seed_1234_g_hg19.bed", 
@@ -90,23 +117,29 @@ data_random_regions <- read_delim("random_genomic_intervals_l_1000_seed_1234_g_h
                                   col_names = F) %>% select(1:3)
 colnames(data_random_regions) <- c("chromosome", "start", "end")
 
-# to calculate mutation rate we need non-overlap genomic intervals
-data_promoters_refseq <- makeNonOverlap(data_promoters_refseq)
-data_exons_refseq <- makeNonOverlap(data_exons_refseq)
-data_random_regions <- makeNonOverlap(data_random_regions, is.bed.format = T)
+data_eplinks_short <- read_delim("eplinks-fantom-filtered.csv", delim = ",")
+data_eplinks_long <- data_eplinks_short %>%
+  mutate(tss = strsplit(tss, ";")) %>%
+  unnest(tss)
+data_pelinks <- read_delim("pelinks-fantom-filtered.csv", delim = ",")
 
-data_exons_in_promoters <- data_exons_refseq %>%
-  genome_inner_join(data_promoters_refseq) %>%
+# to calculate mutation rate we need non-overlap genomic intervals
+data_promoters_refseq_nolap <- makeNonOverlap(data_promoters_refseq)
+data_exons_refseq_nolap <- makeNonOverlap(data_exons_refseq)
+data_random_regions_nolap <- makeNonOverlap(data_random_regions, is.bed.format = T)
+
+data_exons_in_promoters <- data_exons_refseq_nolap %>%
+  genome_inner_join(data_promoters_refseq_nolap) %>%
   mutate(start = pmax(start.x, start.y),
          end = pmin(end.x, end.y)) %>%
   select(chromosome = chromosome.x, start, end) %>%
   distinct()
 
 length_enhancers <- sum(data_enhancers_fantom$end - data_enhancers_fantom$start)
-length_exons <- sum(data_exons_refseq$end - data_exons_refseq$start)
+length_exons <- sum(data_exons_refseq_nolap$end - data_exons_refseq_nolap$start)
 length_exons_in_promoters <- sum(data_exons_in_promoters$end - data_exons_in_promoters$start)
-length_promoters <- sum(data_promoters_refseq$end - data_promoters_refseq$start) - length_exons_in_promoters
-length_random <- sum(data_random_regions$end -data_random_regions$start)
+length_promoters <- sum(data_promoters_refseq_nolap$end - data_promoters_refseq_nolap$start) - length_exons_in_promoters
+length_random <- sum(data_random_regions_nolap$end -data_random_regions_nolap$start)
 
 table_length <- tibble(position = c("promoter", "enhancer", "exon", "others", "random"),
                        length = c(length_promoters, length_enhancers, length_exons, NA, length_random))
@@ -118,9 +151,12 @@ data_icgc_wgs_to_join <- data_icgc_wgs %>%
          start = chromosome_start,
          end = chromosome_end,
          icgc_mutation_id,
-         icgc_donor_id) %>%
+         icgc_donor_id,
+         ref = reference_genome_allele,
+         mut = mutated_to_allele) %>%
   distinct()
 
+# enhancer mutations
 mut_enhancer <- data_enhancers_fantom %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   na.omit() %>%
@@ -128,34 +164,50 @@ mut_enhancer <- data_enhancers_fantom %>%
          start = start.y,
          end = end.y,
          icgc_mutation_id,
-         icgc_donor_id) %>%
+         icgc_donor_id,
+         ref,
+         mut) %>%
   distinct()
+mut_enhancer_bg <- mut_enhancer %>%
+  mutate(start = start - 1,
+         end = end + 1) # the tri-nucleotide background of the mutations
 
-mut_exon <- data_exons_refseq %>% 
+# exon mutations
+mut_exon <- data_exons_refseq_nolap %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   na.omit() %>%
   select(chromosome = chromosome.y,
          start = start.y,
          end = end.y,
          icgc_mutation_id,
-         icgc_donor_id) %>%
+         icgc_donor_id,
+         ref,
+         mut) %>%
   distinct()
+mut_exon_bg <- mut_exon %>%
+  mutate(start = start - 1,
+         end = end + 1) # the tri-nucleotide background of the mutations
 
-mut_promoter <- data_promoters_refseq %>% 
+# promoter mutations
+mut_promoter <- data_promoters_refseq_nolap %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   na.omit() %>%
   select(chromosome = chromosome.y,
          start = start.y,
          end = end.y,
          icgc_mutation_id,
-         icgc_donor_id) %>%
-  distinct() %>%
-  dplyr::setdiff(mut_exon)
+         icgc_donor_id,
+         ref,
+         mut) %>%
+  distinct()
+mut_promoter_bg <- mut_promoter %>%
+  mutate(start = start - 1,
+         end = end + 1) # the tri-nucleotide background of the mutations
 
 mut_others <- data_icgc_wgs_to_join %>%
   dplyr::setdiff(bind_rows(mut_exon, mut_promoter, mut_enhancer))
 
-mut_random <- data_random_regions %>% 
+mut_random <- data_random_regions_nolap %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   na.omit() %>%
   select(chromosome = chromosome.y,
@@ -181,23 +233,26 @@ table_mutation_pos_fantom <- data_icgc_wgs_pos_fantom %>%
   tally(name = "count") %>%
   inner_join(table_length) %>%
   mutate(mutation_rate = scientific(count/num_donors/length))
+
 kable(table_mutation_pos_fantom)
 ```
 
-For promoter regions, we played with its length:
+## Mutation rates for different promoter length
+
+Promoter regions are usually defined as the parts of genome adjacent to each TSS. The exact length to the left and right of the TSS varies from study to study. We want to investigate if the definition of promoter will affect the mutation rate estimation, so we've tried different length and computed the corresponding rate.
 
 ```{r promoter length, echo=F, results='asis'}
 setwd(genomic.interval.path)
-data_promoters_refseq <- read_delim("all_promoters_refseq.txt", delim = "\t",
-                                    col_names = c("chromosome", "start", "end"))
-data_promoters_test <- list("l1000_r1000" = data_promoters_refseq,
-                            "l1000_r0" = data_promoters_refseq %>% 
+data_promoters_refseq_raw <- read_delim("all_promoters_refseq.txt", delim = "\t",
+                                    col_names = c("chromosome", "start", "end", "promoter"))
+data_promoters_test <- list("l1000_r1000" = data_promoters_refseq_raw,
+                            "l1000_r0" = data_promoters_refseq_raw %>% 
                               mutate(end = end - 1000),
-                            "l500_r500" =  data_promoters_refseq %>%
+                            "l500_r500" =  data_promoters_refseq_raw %>%
                               mutate(start = start + 500, end = end - 500),
-                            "l5000_r1000" = data_promoters_refseq %>% 
+                            "l5000_r1000" = data_promoters_refseq_raw %>% 
                               mutate(start = start - 4000),
-                            "l10000_r1000" = data_promoters_refseq %>%
+                            "l10000_r1000" = data_promoters_refseq_raw %>%
                               mutate(start = start - 9000))
 
 mut_count <- NULL
@@ -218,12 +273,13 @@ for(data_promoters in data_promoters_test){
     genome_left_join(data_icgc_wgs_to_join) %>%
     na.omit() %>%
     select(chromosome = chromosome.y,
-         start = start.y,
-         end = end.y,
-         icgc_mutation_id,
-         icgc_donor_id) %>%
-    distinct() %>%
-    dplyr::setdiff(mut_exon)
+           start = start.y,
+           end = end.y,
+           icgc_mutation_id,
+           icgc_donor_id,
+           ref,
+           mut) %>%
+    distinct()
   
   mut_count <- c(mut_count, nrow(mut_promoter))
   length_promoters_all <- c(length_promoters_all, length_promoters)
@@ -238,9 +294,9 @@ table_promoters_test <- tibble(
 kable(table_promoters_test)
 ```
 
-The top-mutated enhancers:
 
-```{r top mutated enhancers, echo=F}
+```{r count number of mutations, echo=F, results = "hide"}
+# number of mutation in each enhancer
 data_enhancers_mutated <- data_enhancers_fantom %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   select(chromosome = chromosome.x,
@@ -252,54 +308,221 @@ data_enhancers_mutated <- data_enhancers_fantom %>%
   mutate(count = ifelse(is.na(icgc_mutation_id), 0, 1)) %>%
   group_by(chromosome, start, end, enhancer) %>%
   summarise(count = sum(count)) %>%
-  mutate(length = end - start) %>%
-  mutate(mut_rate = count/length) %>%
-  ungroup() %>%
-  arrange(desc(count))
-
-kable(data_enhancers_mutated %>% dplyr::slice(1:10))
-```
-
-The tss whose enhancers harbor the greatest number of mutations:
-
-```{r top mutated tss, echo=F}
-setwd(genomic.interval.path)
-data_eplinks <- read_delim("eplinks-fantom-filtered.csv", delim = ",") %>%
-  mutate(tss = strsplit(tss, ";")) %>%
-  unnest(tss)
-data_enhancers_per_tss <- data_eplinks %>% 
-  group_by(tss) %>%
-  tally(name = "e_count") %>%
+  mutate(length = end - start + 1) %>%
   ungroup()
 
-data_tss_mutated <- data_enhancers_mutated %>%
-  inner_join(data_eplinks) %>%
-  group_by(tss) %>%
-  summarise(mut_count = sum(count)) %>%
-  ungroup() %>%
-  arrange(desc(mut_count)) %>%
-  inner_join(data_enhancers_per_tss)
+# number of mutation in each exon
+data_exons_mutated <- data_exons_refseq %>% 
+  genome_left_join(data_icgc_wgs_to_join) %>%
+  select(chromosome = chromosome.x,
+         start = start.x,
+         end = end.x,
+         exon,
+         icgc_mutation_id,
+         icgc_donor_id) %>%
+  mutate(count = ifelse(is.na(icgc_mutation_id), 0, 1)) %>%
+  group_by(chromosome, start, end, exon) %>%
+  summarise(count = sum(count)) %>%
+  mutate(length = end - start + 1) %>%
+  ungroup()
 
-kable(data_tss_mutated %>% dplyr::slice(1:10))
+# number of mutation in each promoter
+data_promoters_mutated <- data_promoters_refseq %>% 
+  genome_left_join(data_icgc_wgs_to_join) %>%
+  select(chromosome = chromosome.x,
+         start = start.x,
+         end = end.x,
+         promoter,
+         icgc_mutation_id,
+         icgc_donor_id) %>%
+  mutate(count = ifelse(is.na(icgc_mutation_id), 0, 1)) %>%
+  group_by(chromosome, start, end, promoter) %>%
+  summarise(count = sum(count)) %>%
+  mutate(length = end - start + 1) %>%
+  ungroup()
+```
+
+## Enhancer mutations
+
+```{r calculate enhancer background, echo=F}
+# the tri-nucleotide background of the mutations
+seq_enhancers_fantom <- getSeq(genome, names = data_enhancers_fantom$chromosome,
+                               start = data_enhancers_fantom$start,
+                               end = data_enhancers_fantom$end)
+mat_tri <- reverseMerge(trinucleotideFrequency(seq_enhancers_fantom))
+freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count") %>%
+  mutate(percentage = 100*count/sum(count))
+
+seq_enhancer_mutations <- getSeq(genome, names = mut_enhancer_bg$chromosome,
+                                 start = mut_enhancer_bg$start,
+                                 end = mut_enhancer_bg$end)
+mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_enhancer_mutations))
+freq_tri_mut <- enframe(colSums(mat_tri_mut), name = "trinucleotide", value = "mut_count") %>%
+  arrange(desc(mut_count))
+freq_tri <- freq_tri %>%
+  inner_join(freq_tri_mut) %>%
+  mutate(mut_rate = mut_count/count/num_donors)
+
+data_enhancers_mutated <- data_enhancers_mutated %>%
+  mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors),
+         var_count = as.vector(mat_tri %*% 
+                                 freq_tri$mut_rate*(1-freq_tri$mut_rate) * num_donors))
+```
+
+The TSS whose enhancers harbor the greatest number of mutations:
+
+```{r top mutated tss, echo=F}
+# per tss
+data_enhancers_mutated_annotated_tss <- data_enhancers_mutated %>%
+  inner_join(data_eplinks_long)
+table_enhancer_mutation_by_tss <- data_enhancers_mutated_annotated_tss %>%
+  group_by(tss) %>%
+  summarise(count = sum(count),
+            enhancer_length = sum(length),
+            expected_count = sum(expected_count),
+            var_count = sum(var_count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  arrange(desc(count))
+
+kable(table_enhancer_mutation_by_tss %>% dplyr::slice(1:10))
 ```
 
 The genes whose enhancers harbor the greatest number of mutations:
 
 ```{r top mutated genes, echo=F}
-setwd(genomic.interval.path)
-data_eplinks <- read_delim("eplinks-fantom-filtered.csv", delim = ",")
-data_enhancers_per_gene <- data_eplinks %>% 
+# per gene
+data_enhancers_mutated_annotated_gene <- data_enhancers_mutated %>%
+  inner_join(data_eplinks_short)
+table_enhancer_mutation_by_gene <- data_enhancers_mutated_annotated_gene %>%
   group_by(gene) %>%
-  tally(name = "e_count") %>%
-  ungroup()
+  summarise(count = sum(count),
+            enhancer_length = sum(length),
+            expected_count = sum(expected_count),
+            var_count = sum(var_count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  arrange(desc(count))
 
-data_genes_mutated <- data_enhancers_mutated %>%
-  inner_join(data_eplinks) %>%
-  group_by(gene) %>%
-  summarise(mut_count = sum(count)) %>%
-  ungroup() %>%
-  arrange(desc(mut_count)) %>%
-  inner_join(data_enhancers_per_gene)
-
-kable(data_genes_mutated %>% dplyr::slice(1:10))
+kable(table_enhancer_mutation_by_gene %>% dplyr::slice(1:10))
 ```
+
+## Promoter mutations
+
+```{r calculate promoter background, echo=F}
+# promoter sequences and trinucleotide frequencies
+seq_promoters_refseq <- getSeq(genome, names = data_promoters_refseq$chromosome,
+                               start = data_promoters_refseq$start,
+                               end = data_promoters_refseq$end)
+mat_tri <- reverseMerge(trinucleotideFrequency(seq_promoters_refseq))
+freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count")
+
+# frequencies of trinucleotides that are mutated
+seq_promoter_mutations_ref <- getSeq(genome, names = mut_promoter_bg$chromosome,
+                                     start = mut_promoter_bg$start,
+                                     end = mut_promoter_bg$end)
+seq_promoter_mutations_mut <- replaceLetterAt(seq_promoter_mutations_ref, 
+                                              at = matrix(c(F, T, F), 
+                                                          nrow = 
+                                                            length(seq_promoter_mutations_ref),
+                                                          ncol = 3,
+                                                          byrow = T), 
+                                              mut_promoter_bg$mut)
+mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_promoter_mutations_ref))
+freq_tri_mut <- enframe(colSums(mat_tri_mut), name = "trinucleotide", value = "mut_count") %>%
+  arrange(desc(mut_count))
+
+freq_tri <- freq_tri %>%
+  inner_join(freq_tri_mut) %>%
+  mutate(mut_rate = mut_count/count/num_donors)
+
+data_promoters_mutated <- data_promoters_mutated %>%
+  mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors),
+         var_count = as.vector(mat_tri %*% 
+                                 freq_tri$mut_rate*(1-freq_tri$mut_rate) * num_donors))
+```
+
+The tss whose promoter harbors the greatest number of mutations:
+
+```{r top mutated tss promoter, echo=F}
+# annotate by refseq 
+setwd(refseq.data.path)
+mapping_hgnc <- read_delim("refseq_to_hgnc.txt", delim = "\t") %>%
+  select(gene = `Approved symbol`,
+         refseq_id = `RefSeq IDs`,
+         refseq_id_ncbi = `RefSeq(supplied by NCBI)`) %>%
+  pivot_longer(cols = refseq_id:refseq_id_ncbi, values_to = "tss") %>%
+  select(gene, tss) %>%
+  na.omit() %>%
+  distinct()
+mapping_refseq_tss <- read_delim("refseq_TSS_hg19_170929.bed", delim = '\t',
+                             col_names = F) %>%
+  select(c(1,2,4)) %>%
+  dplyr::rename(chromosome = "X1", pos = "X2", tss = "X4")
+
+data_promoters_mutated_annotated <- data_promoters_mutated %>%
+  mutate(pos = end) %>%
+  inner_join(mapping_refseq_tss) %>%
+  inner_join(mapping_hgnc) %>%
+  select(-pos)
+
+# per tss
+table_promoter_mutation_by_tss <- data_promoters_mutated_annotated %>%
+  group_by(tss) %>%
+  summarise(count = sum(count),
+            promoter_length = sum(length),
+            expected_count = sum(expected_count),
+            var_count = sum(var_count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  arrange(desc(count))
+
+kable(table_promoter_mutation_by_tss %>% dplyr::slice(1:10))
+```
+
+The genes whose promoters harbor the greatest number of mutations:
+
+```{r top mutated genes promoter, echo=F}
+table_promoter_mutation_by_gene <- data_promoters_mutated_annotated %>%
+  group_by(gene) %>%
+  summarise(count = sum(count),
+            promoter_length = sum(length),
+            expected_count = sum(expected_count),
+            var_count = sum(var_count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  arrange(desc(count))
+
+kable(table_promoter_mutation_by_gene %>% dplyr::slice(1:10))
+```
+
+## Regulatory mutations
+
+The tss whose regulatory regions harbor the greatest number of mutations:
+
+```{r top mutated tss all regulatory regions, echo=F}
+table_regulatory_mutation_by_tss <- table_promoter_mutation_by_tss %>%
+  full_join(table_enhancer_mutation_by_tss, by = "tss") %>%
+  mutate(count = replace_na(count.x, 0) + replace_na(count.y, 0), 
+         regulatory_length = replace_na(promoter_length, 0) + replace_na(enhancer_length, 0), 
+         expected_count = replace_na(expected_count.x, 0) + replace_na(expected_count.y, 0),
+         var_count = replace_na(var_count.x, 0) + replace_na(var_count.y, 0)) %>%
+  arrange(desc(count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  select(tss, count, regulatory_length, expected_count, var_count, p_value)
+
+kable(table_regulatory_mutation_by_tss %>% arrange(p_value) %>% dplyr::slice(1:20))
+```
+
+The genes whose regulatory regions harbor the greatest number of mutations:
+
+```{r top mutated genes all regulatory regions, echo=F}
+table_regulatory_mutation_by_gene <- table_promoter_mutation_by_gene %>%
+  full_join(table_enhancer_mutation_by_gene, by = "gene") %>%
+  mutate(count = replace_na(count.x, 0) + replace_na(count.y, 0), 
+         regulatory_length = replace_na(promoter_length, 0) + replace_na(enhancer_length, 0), 
+         expected_count = replace_na(expected_count.x, 0) + replace_na(expected_count.y, 0),
+         var_count = replace_na(var_count.x, 0) + replace_na(var_count.y, 0)) %>%
+  arrange(desc(count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  select(gene, count, regulatory_length, expected_count, var_count, p_value)
+
+kable(table_regulatory_mutation_by_gene %>% arrange(p_value) %>% dplyr::slice(1:20))
+```
+
