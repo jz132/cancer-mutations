@@ -108,8 +108,10 @@ data_enhancers_fantom <- read_delim("all_enhancers_fantom.txt", delim = "\t",
 data_promoters_refseq <- read_delim("all_promoters_refseq.txt", delim = "\t", 
                                 col_names = c("chromosome", "start", "end", "promoter")) %>%
   arrange(chromosome, start, end) %>%
-  distinct() %>%
-  mutate(end = end - 1000) # for now, we only consider the part upstream of tss
+  distinct()
+
+# data_promoters_refseq <- data_promoters_refseq %>%
+#   mutate(end = end - 1000) # for now, we only consider the part upstream of tss
 
 data_exons_refseq <- read_delim("all_exons_refseq.txt", delim = "\t", 
                                 col_names = c("chromosome", "start", "end", "exon"))
@@ -295,23 +297,9 @@ table_promoters_test <- tibble(
 kable(table_promoters_test)
 ```
 
+## Exon mutations
 
-```{r count number of mutations, echo=F, results = "hide"}
-# number of mutation in each enhancer
-data_enhancers_mutated <- data_enhancers_fantom %>% 
-  genome_left_join(data_icgc_wgs_to_join) %>%
-  select(chromosome = chromosome.x,
-         start = start.x,
-         end = end.x,
-         enhancer,
-         icgc_mutation_id,
-         icgc_donor_id) %>%
-  mutate(count = ifelse(is.na(icgc_mutation_id), 0, 1)) %>%
-  group_by(chromosome, start, end, enhancer) %>%
-  summarise(count = sum(count)) %>%
-  mutate(length = end - start + 1) %>%
-  ungroup()
-
+```{r calculate exon background, echo=F}
 # number of mutation in each exon
 data_exons_mutated <- data_exons_refseq %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
@@ -327,25 +315,6 @@ data_exons_mutated <- data_exons_refseq %>%
   mutate(length = end - start + 1) %>%
   ungroup()
 
-# number of mutation in each promoter
-data_promoters_mutated <- data_promoters_refseq %>% 
-  genome_left_join(data_icgc_wgs_to_join) %>%
-  select(chromosome = chromosome.x,
-         start = start.x,
-         end = end.x,
-         promoter,
-         icgc_mutation_id,
-         icgc_donor_id) %>%
-  mutate(count = ifelse(is.na(icgc_mutation_id), 0, 1)) %>%
-  group_by(chromosome, start, end, promoter) %>%
-  summarise(count = sum(count)) %>%
-  mutate(length = end - start + 1) %>%
-  ungroup()
-```
-
-## Exon mutations
-
-```{r calculate exon background, echo=F}
 # exon sequences and trinucleotide frequencies
 seq_exons_refseq <- getSeq(genome, names = data_exons_refseq$chromosome,
                                start = data_exons_refseq$start,
@@ -373,9 +342,8 @@ freq_tri <- freq_tri %>%
   mutate(mut_rate = mut_count/count/num_donors)
 
 data_exons_mutated <- data_exons_mutated %>%
-  mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors),
-         var_count = as.vector(mat_tri %*% 
-                                 freq_tri$mut_rate*(1-freq_tri$mut_rate) * num_donors))
+  mutate(expected_count = as.vector(mat_tri%*%freq_tri$mut_rate*num_donors),
+         var_count = as.vector(mat_tri%*%(freq_tri$mut_rate*(1-freq_tri$mut_rate))*num_donors))
 ```
 
 The TSS whose exon harbors the greatest number of mutations:
@@ -436,6 +404,21 @@ kable(table_exon_mutation_by_gene %>% dplyr::slice(1:10))
 ## Promoter mutations
 
 ```{r calculate promoter background, echo=F}
+# number of mutation in each promoter
+data_promoters_mutated <- data_promoters_refseq %>% 
+  genome_left_join(data_icgc_wgs_to_join) %>%
+  select(chromosome = chromosome.x,
+         start = start.x,
+         end = end.x,
+         promoter,
+         icgc_mutation_id,
+         icgc_donor_id) %>%
+  mutate(count = ifelse(is.na(icgc_mutation_id), 0, 1)) %>%
+  group_by(chromosome, start, end, promoter) %>%
+  summarise(count = sum(count)) %>%
+  mutate(length = end - start + 1) %>%
+  ungroup()
+
 # promoter sequences and trinucleotide frequencies
 seq_promoters_refseq <- getSeq(genome, names = data_promoters_refseq$chromosome,
                                start = data_promoters_refseq$start,
@@ -463,9 +446,8 @@ freq_tri <- freq_tri %>%
   mutate(mut_rate = mut_count/count/num_donors)
 
 data_promoters_mutated <- data_promoters_mutated %>%
-  mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors),
-         var_count = as.vector(mat_tri %*% 
-                                 freq_tri$mut_rate*(1-freq_tri$mut_rate) * num_donors))
+    mutate(expected_count = as.vector(mat_tri%*%freq_tri$mut_rate*num_donors),
+         var_count = as.vector(mat_tri%*%(freq_tri$mut_rate*(1-freq_tri$mut_rate))*num_donors))
 ```
 
 The TSS whose promoter harbors the greatest number of mutations:
@@ -487,7 +469,7 @@ mapping_refseq_tss <- read_delim("refseq_TSS_hg19_170929.bed", delim = '\t',
   dplyr::rename(chromosome = "X1", pos = "X2", tss = "X4")
 
 data_promoters_mutated_annotated <- data_promoters_mutated %>%
-  mutate(pos = end) %>%
+  mutate(pos = end - 1000) %>%
   inner_join(mapping_refseq_tss) %>%
   inner_join(mapping_hgnc) %>%
   select(-pos)
@@ -527,6 +509,21 @@ kable(table_promoter_mutation_by_gene %>% dplyr::slice(1:10))
 ## Enhancer mutations
 
 ```{r calculate enhancer background, echo=F}
+# number of mutation in each enhancer
+data_enhancers_mutated <- data_enhancers_fantom %>% 
+  genome_left_join(data_icgc_wgs_to_join) %>%
+  select(chromosome = chromosome.x,
+         start = start.x,
+         end = end.x,
+         enhancer,
+         icgc_mutation_id,
+         icgc_donor_id) %>%
+  mutate(count = ifelse(is.na(icgc_mutation_id), 0, 1)) %>%
+  group_by(chromosome, start, end, enhancer) %>%
+  summarise(count = sum(count)) %>%
+  mutate(length = end - start + 1) %>%
+  ungroup()
+
 # the tri-nucleotide background of the mutations
 seq_enhancers_fantom <- getSeq(genome, names = data_enhancers_fantom$chromosome,
                                start = data_enhancers_fantom$start,
@@ -546,9 +543,8 @@ freq_tri <- freq_tri %>%
   mutate(mut_rate = mut_count/count/num_donors)
 
 data_enhancers_mutated <- data_enhancers_mutated %>%
-  mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors),
-         var_count = as.vector(mat_tri %*% 
-                                 freq_tri$mut_rate*(1-freq_tri$mut_rate) * num_donors))
+  mutate(expected_count = as.vector(mat_tri%*%freq_tri$mut_rate*num_donors),
+         var_count = as.vector(mat_tri%*%(freq_tri$mut_rate*(1-freq_tri$mut_rate))*num_donors))
 ```
 
 The TSS whose enhancers harbor the greatest number of mutations:
