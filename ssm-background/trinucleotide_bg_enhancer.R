@@ -29,7 +29,7 @@ refseq.data.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks/RefSeq"
 output.path <- "/Users/jz132/r_projects/cancer-mutations/ssm-background/"
 figure.path <- "/Users/jz132/r_projects/cancer-mutations/ssm-background/Figures/"
 
-datasetname <- "BRCA-EU"
+datasetname <- "LIRI-JP"
 filename <- paste0("simple_somatic_mutation.open.", datasetname, ".tsv")
 
 genome <- getBSgenome("BSgenome.Hsapiens.UCSC.hg19")

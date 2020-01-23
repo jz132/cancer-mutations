@@ -391,16 +391,15 @@ mapping_hgnc <- read_delim("refseq_to_hgnc.txt", delim = "\t") %>%
   select(gene, tss) %>%
   na.omit() %>%
   distinct()
-mapping_refseq_tss <- read_delim("refseq_TSS_hg19_170929.bed", delim = '\t',
+mapping_refseq_exon <- read_delim("refseq_exons_171007.bed", delim = '\t',
                              col_names = F) %>%
-  select(c(1,2,4)) %>%
-  dplyr::rename(chromosome = "X1", pos = "X2", tss = "X4")
+  select(chromosome = "X1", start = "X2", end = "X3", tss = "X4") %>%
+  mutate(start = start + 1) %>%
+  mutate(tss = gsub("_exon.*$", "", tss))
 
 data_exons_mutated_annotated <- data_exons_mutated %>%
-  mutate(pos = end) %>%
-  inner_join(mapping_refseq_tss) %>%
-  inner_join(mapping_hgnc) %>%
-  select(-pos)
+  inner_join(mapping_refseq_exon) %>%
+  inner_join(mapping_hgnc)
 
 if(ignore.rna){
   data_exons_mutated_annotated <- data_exons_mutated_annotated %>% filter(grepl("NM", tss))
@@ -432,70 +431,6 @@ table_exon_mutation_by_gene <- data_exons_mutated_annotated %>%
   arrange(desc(count))
 
 kable(table_exon_mutation_by_gene %>% dplyr::slice(1:10))
-```
-
-
-## Enhancer mutations
-
-```{r calculate enhancer background, echo=F}
-# the tri-nucleotide background of the mutations
-seq_enhancers_fantom <- getSeq(genome, names = data_enhancers_fantom$chromosome,
-                               start = data_enhancers_fantom$start,
-                               end = data_enhancers_fantom$end)
-mat_tri <- reverseMerge(trinucleotideFrequency(seq_enhancers_fantom))
-freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count") %>%
-  mutate(percentage = 100*count/sum(count))
-
-seq_enhancer_mutations <- getSeq(genome, names = mut_enhancer_bg$chromosome,
-                                 start = mut_enhancer_bg$start,
-                                 end = mut_enhancer_bg$end)
-mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_enhancer_mutations))
-freq_tri_mut <- enframe(colSums(mat_tri_mut), name = "trinucleotide", value = "mut_count") %>%
-  arrange(desc(mut_count))
-freq_tri <- freq_tri %>%
-  inner_join(freq_tri_mut) %>%
-  mutate(mut_rate = mut_count/count/num_donors)
-
-data_enhancers_mutated <- data_enhancers_mutated %>%
-  mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors),
-         var_count = as.vector(mat_tri %*% 
-                                 freq_tri$mut_rate*(1-freq_tri$mut_rate) * num_donors))
-```
-
-The TSS whose enhancers harbor the greatest number of mutations:
-
-```{r top mutated tss, echo=F}
-# per tss
-data_enhancers_mutated_annotated_tss <- data_enhancers_mutated %>%
-  inner_join(data_eplinks_long)
-table_enhancer_mutation_by_tss <- data_enhancers_mutated_annotated_tss %>%
-  group_by(tss) %>%
-  summarise(count = sum(count),
-            enhancer_length = sum(length),
-            expected_count = sum(expected_count),
-            var_count = sum(var_count)) %>%
-  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
-  arrange(desc(count))
-
-kable(table_enhancer_mutation_by_tss %>% dplyr::slice(1:10))
-```
-
-The genes whose enhancers harbor the greatest number of mutations:
-
-```{r top mutated genes, echo=F}
-# per gene
-data_enhancers_mutated_annotated_gene <- data_enhancers_mutated %>%
-  inner_join(data_eplinks_short)
-table_enhancer_mutation_by_gene <- data_enhancers_mutated_annotated_gene %>%
-  group_by(gene) %>%
-  summarise(count = sum(count),
-            enhancer_length = sum(length),
-            expected_count = sum(expected_count),
-            var_count = sum(var_count)) %>%
-  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
-  arrange(desc(count))
-
-kable(table_enhancer_mutation_by_gene %>% dplyr::slice(1:10))
 ```
 
 ## Promoter mutations
@@ -587,6 +522,69 @@ table_promoter_mutation_by_gene <- data_promoters_mutated_annotated %>%
   arrange(desc(count))
 
 kable(table_promoter_mutation_by_gene %>% dplyr::slice(1:10))
+```
+
+## Enhancer mutations
+
+```{r calculate enhancer background, echo=F}
+# the tri-nucleotide background of the mutations
+seq_enhancers_fantom <- getSeq(genome, names = data_enhancers_fantom$chromosome,
+                               start = data_enhancers_fantom$start,
+                               end = data_enhancers_fantom$end)
+mat_tri <- reverseMerge(trinucleotideFrequency(seq_enhancers_fantom))
+freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count") %>%
+  mutate(percentage = 100*count/sum(count))
+
+seq_enhancer_mutations <- getSeq(genome, names = mut_enhancer_bg$chromosome,
+                                 start = mut_enhancer_bg$start,
+                                 end = mut_enhancer_bg$end)
+mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_enhancer_mutations))
+freq_tri_mut <- enframe(colSums(mat_tri_mut), name = "trinucleotide", value = "mut_count") %>%
+  arrange(desc(mut_count))
+freq_tri <- freq_tri %>%
+  inner_join(freq_tri_mut) %>%
+  mutate(mut_rate = mut_count/count/num_donors)
+
+data_enhancers_mutated <- data_enhancers_mutated %>%
+  mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors),
+         var_count = as.vector(mat_tri %*% 
+                                 freq_tri$mut_rate*(1-freq_tri$mut_rate) * num_donors))
+```
+
+The TSS whose enhancers harbor the greatest number of mutations:
+
+```{r top mutated tss, echo=F}
+# per tss
+data_enhancers_mutated_annotated_tss <- data_enhancers_mutated %>%
+  inner_join(data_eplinks_long)
+table_enhancer_mutation_by_tss <- data_enhancers_mutated_annotated_tss %>%
+  group_by(tss) %>%
+  summarise(count = sum(count),
+            enhancer_length = sum(length),
+            expected_count = sum(expected_count),
+            var_count = sum(var_count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  arrange(desc(count))
+
+kable(table_enhancer_mutation_by_tss %>% dplyr::slice(1:10))
+```
+
+The genes whose enhancers harbor the greatest number of mutations:
+
+```{r top mutated genes, echo=F}
+# per gene
+data_enhancers_mutated_annotated_gene <- data_enhancers_mutated %>%
+  inner_join(data_eplinks_short)
+table_enhancer_mutation_by_gene <- data_enhancers_mutated_annotated_gene %>%
+  group_by(gene) %>%
+  summarise(count = sum(count),
+            enhancer_length = sum(length),
+            expected_count = sum(expected_count),
+            var_count = sum(var_count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  arrange(desc(count))
+
+kable(table_enhancer_mutation_by_gene %>% dplyr::slice(1:10))
 ```
 
 ## Regulatory mutations

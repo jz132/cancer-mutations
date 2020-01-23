@@ -29,7 +29,7 @@ refseq.data.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks/RefSeq"
 output.path <- "/Users/jz132/r_projects/cancer-mutations/ssm-background/"
 figure.path <- "/Users/jz132/r_projects/cancer-mutations/ssm-background/Figures/"
 
-datasetname <- "BRCA-EU"
+datasetname <- "LIRI-JP"
 filename <- paste0("simple_somatic_mutation.open.", datasetname, ".tsv")
 
 genome <- getBSgenome("BSgenome.Hsapiens.UCSC.hg19")
@@ -196,6 +196,7 @@ mapping_hgnc <- read_delim("refseq_to_hgnc.txt", delim = "\t") %>%
 mapping_refseq_exon <- read_delim("refseq_exons_171007.bed", delim = '\t',
                              col_names = F) %>%
   select(chromosome = "X1", start = "X2", end = "X3", tss = "X4") %>%
+  mutate(start = start + 1) %>%
   mutate(tss = gsub("_exon.*$", "", tss))
 
 data_exons_mutated_annotated <- data_exons_mutated %>%
