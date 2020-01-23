@@ -57,6 +57,7 @@ icgc.data.path <- "/Users/jz132/Desktop/Gordanlab/Data/ICGC"
 genomic.interval.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks"
 refseq.data.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks/RefSeq"
 filename <- "simple_somatic_mutation.open.LIAD-FR.tsv"
+ignore.rna <- TRUE
 
 genome <- getBSgenome("BSgenome.Hsapiens.UCSC.hg19")
 
@@ -259,7 +260,7 @@ mut_count <- NULL
 length_promoters_all <- NULL
 for(data_promoters in data_promoters_test){
   data_promoters <- makeNonOverlap(data_promoters)
-  data_exons_in_promoters <- data_exons_refseq %>%
+  data_exons_in_promoters <- data_exons_refseq_nolap %>%
     genome_inner_join(data_promoters) %>%
     mutate(start = pmax(start.x, start.y), end = pmin(end.x, end.y)) %>% 
     select(chromosome = chromosome.x, start, end) %>%
@@ -341,6 +342,98 @@ data_promoters_mutated <- data_promoters_refseq %>%
   mutate(length = end - start + 1) %>%
   ungroup()
 ```
+
+## Exon mutations
+
+```{r calculate exon background, echo=F}
+# exon sequences and trinucleotide frequencies
+seq_exons_refseq <- getSeq(genome, names = data_exons_refseq$chromosome,
+                               start = data_exons_refseq$start,
+                               end = data_exons_refseq$end)
+mat_tri <- reverseMerge(trinucleotideFrequency(seq_exons_refseq))
+freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count")
+
+# frequencies of trinucleotides that are mutated
+seq_exon_mutations_ref <- getSeq(genome, names = mut_exon_bg$chromosome,
+                                     start = mut_exon_bg$start,
+                                     end = mut_exon_bg$end)
+seq_exon_mutations_mut <- replaceLetterAt(seq_exon_mutations_ref, 
+                                              at = matrix(c(F, T, F), 
+                                                          nrow = 
+                                                            length(seq_exon_mutations_ref),
+                                                          ncol = 3,
+                                                          byrow = T), 
+                                              mut_exon_bg$mut)
+mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_exon_mutations_ref))
+freq_tri_mut <- enframe(colSums(mat_tri_mut), name = "trinucleotide", value = "mut_count") %>%
+  arrange(desc(mut_count))
+
+freq_tri <- freq_tri %>%
+  inner_join(freq_tri_mut) %>%
+  mutate(mut_rate = mut_count/count/num_donors)
+
+data_exons_mutated <- data_exons_mutated %>%
+  mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors),
+         var_count = as.vector(mat_tri %*% 
+                                 freq_tri$mut_rate*(1-freq_tri$mut_rate) * num_donors))
+```
+
+The TSS whose exon harbors the greatest number of mutations:
+
+```{r top mutated tss exon, echo=F}
+# annotate by refseq 
+setwd(refseq.data.path)
+mapping_hgnc <- read_delim("refseq_to_hgnc.txt", delim = "\t") %>%
+  select(gene = `Approved symbol`,
+         refseq_id = `RefSeq IDs`,
+         refseq_id_ncbi = `RefSeq(supplied by NCBI)`) %>%
+  pivot_longer(cols = refseq_id:refseq_id_ncbi, values_to = "tss") %>%
+  select(gene, tss) %>%
+  na.omit() %>%
+  distinct()
+mapping_refseq_tss <- read_delim("refseq_TSS_hg19_170929.bed", delim = '\t',
+                             col_names = F) %>%
+  select(c(1,2,4)) %>%
+  dplyr::rename(chromosome = "X1", pos = "X2", tss = "X4")
+
+data_exons_mutated_annotated <- data_exons_mutated %>%
+  mutate(pos = end) %>%
+  inner_join(mapping_refseq_tss) %>%
+  inner_join(mapping_hgnc) %>%
+  select(-pos)
+
+if(ignore.rna){
+  data_exons_mutated_annotated <- data_exons_mutated_annotated %>% filter(grepl("NM", tss))
+}
+
+# per tss
+table_exon_mutation_by_tss <- data_exons_mutated_annotated %>%
+  group_by(tss) %>%
+  summarise(count = sum(count),
+            exon_length = sum(length),
+            expected_count = sum(expected_count),
+            var_count = sum(var_count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  arrange(desc(count))
+
+kable(table_exon_mutation_by_tss %>% dplyr::slice(1:10))
+```
+
+The genes whose exons harbor the greatest number of mutations:
+
+```{r top mutated genes exon, echo=F}
+table_exon_mutation_by_gene <- data_exons_mutated_annotated %>%
+  group_by(gene) %>%
+  summarise(count = sum(count),
+            exon_length = sum(length),
+            expected_count = sum(expected_count),
+            var_count = sum(var_count)) %>%
+  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  arrange(desc(count))
+
+kable(table_exon_mutation_by_gene %>% dplyr::slice(1:10))
+```
+
 
 ## Enhancer mutations
 
@@ -463,6 +556,10 @@ data_promoters_mutated_annotated <- data_promoters_mutated %>%
   inner_join(mapping_refseq_tss) %>%
   inner_join(mapping_hgnc) %>%
   select(-pos)
+
+if(ignore.rna){
+  data_promoters_mutated_annotated <- data_promoters_mutated_annotated %>% filter(grepl("NM", tss))
+}
 
 # per tss
 table_promoter_mutation_by_tss <- data_promoters_mutated_annotated %>%
