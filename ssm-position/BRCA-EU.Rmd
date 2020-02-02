@@ -90,7 +90,8 @@ exome <- dplyr::setdiff(all_types, c(nonexome, NA))
 
 # focus on single base substitution in WGS only
 data_icgc_wgs <- data_icgc_raw %>% 
-  filter(sequencing_strategy == "WGS", mutation_type == "single base substitution")
+  filter(sequencing_strategy == "WGS",
+         mutation_type == "single base substitution")
 num_donors <- length(data_icgc_wgs %>% distinct(icgc_donor_id) %>% pull())
 num_mutations <- length(data_icgc_wgs %>% distinct(icgc_mutation_id, icgc_donor_id) %>% pull())
 ```
@@ -149,7 +150,6 @@ table_length <- tibble(position = c("promoter", "enhancer", "exon", "others", "r
 
 # annotate the mutations by the types of genomic intervals
 data_icgc_wgs_to_join <- data_icgc_wgs %>%
-  filter(!is.na(consequence_type)) %>% 
   select(chromosome = chromosome,
          start = chromosome_start,
          end = chromosome_end,
@@ -202,7 +202,8 @@ mut_promoter <- data_promoters_refseq_nolap %>%
          icgc_donor_id,
          ref,
          mut) %>%
-  distinct()
+  distinct() %>%
+  dplyr::setdiff(mut_exon)
 mut_promoter_bg <- mut_promoter %>%
   mutate(start = start - 1,
          end = end + 1) # the tri-nucleotide background of the mutations
