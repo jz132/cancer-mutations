@@ -23,11 +23,11 @@ reverseMerge <- function(count_mat){
 }
 
 # file paths and file names
-icgc.data.path <- "/Users/jz132/Desktop/Gordanlab/Data/ICGC"
-genomic.interval.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks"
-refseq.data.path <- "/Users/jz132/r_projects/cancer-mutations/pelinks/RefSeq"
-output.path <- "/Users/jz132/r_projects/cancer-mutations/ssm-background/"
-figure.path <- "/Users/jz132/r_projects/cancer-mutations/ssm-background/Figures/"
+icgc.data.path <- "~/Desktop/Gordanlab/Data/ICGC"
+genomic.interval.path <- "~/r_projects/cancer-mutations/pelinks"
+refseq.data.path <- "~/r_projects/cancer-mutations/pelinks/RefSeq"
+output.path <- "~/r_projects/cancer-mutations/ssm-background/"
+figure.path <- "~/r_projects/cancer-mutations/ssm-background/Figures/"
 
 datasetname <- "LIRI-JP"
 filename <- paste0("simple_somatic_mutation.open.", datasetname, ".tsv")
@@ -125,16 +125,6 @@ seq_enhancers_fantom <- getSeq(genome, names = data_enhancers_fantom$chromosome,
 mat_tri <- reverseMerge(trinucleotideFrequency(seq_enhancers_fantom))
 freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count")
 
-setwd(figure.path)
-png(file = paste0("enhancer_trinucleotide_dist_", datasetname, ".png"), 
-                  width = 1200, height = 800, res = 160)
-ggplot(data = freq_tri, aes(x = trinucleotide, y = count)) + 
-  geom_col() + 
-  ggtitle(paste(datasetname, "enhancer sequence")) + 
-  theme(plot.title = element_text(hjust = 0.5)) + 
-  theme(axis.text.x = element_text(angle = 45))
-dev.off()
-
 # trinucleotide background of the mutations
 mut_enhancer_bg <- mut_enhancer %>%
   mutate(start = start - 1,
@@ -150,6 +140,7 @@ seq_enhancer_mutations_mut <- replaceLetterAt(seq_enhancer_mutations_ref,
                                                           ncol = 3,
                                                           byrow = T), 
                                               mut_enhancer_bg$mut)
+
 table_mutation_tri <- tibble(
   ref = as.character(seq_enhancer_mutations_ref),
   ref_rev = as.character(reverseComplement(seq_enhancer_mutations_ref)),
@@ -159,21 +150,8 @@ table_mutation_tri <- tibble(
   mutate(ref = ifelse(ref < ref_rev, ref, ref_rev),
          mut = ifelse(ref < ref_rev, mut, mut_rev)) %>%
   group_by(ref, mut) %>%
-  tally(name = "count")
-
-setwd(figure.path)
-png(file = paste0("enhancer_mutated_trinucleotide_dist_", datasetname, ".png"), 
-    width = 1200, height = 800, res = 160)
-ggplot(data = table_mutation_tri, mapping = aes(x = ref, y = count, 
-                                                fill = paste0(substr(ref, 2, 2),
-                                                              "->",
-                                                              substr(mut, 2, 2)))) + 
-  geom_col() + 
-  labs(fill = "Mutation") +
-  ggtitle(paste(datasetname, "enhancer mutation")) + 
-  theme(plot.title = element_text(hjust = 0.5)) + 
-  theme(axis.text.x = element_text(angle = 45))
-dev.off()
+  tally(name = "count") %>% 
+  ungroup()
 
 mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_enhancer_mutations_ref))
 freq_tri_mut <- enframe(colSums(mat_tri_mut), name = "trinucleotide", value = "mut_count") %>%
@@ -185,8 +163,7 @@ freq_tri <- freq_tri %>%
 
 data_enhancers_mutated <- data_enhancers_mutated %>%
   mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors),
-         var_count = as.vector(mat_tri %*% 
-                                 freq_tri$mut_rate*(1-freq_tri$mut_rate) * num_donors))
+         var_count = as.vector(mat_tri %*% (freq_tri$mut_rate*(1-freq_tri$mut_rate)*num_donors)))
 
 # per gene
 data_enhancers_mutated_annotated <- data_enhancers_mutated %>%
@@ -212,24 +189,28 @@ table_enhancer_mutation_by_tss <- data_enhancers_mutated_annotated %>%
   mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
   arrange(desc(count))
 
-# old code to check if refseq annotation is the same as fantom gene annotation
-# setwd(refseq.data.path)
-# mapping_hgnc <- read_delim("refseq_to_hgnc.txt", delim = "\t") %>%
-#   select(hgnc_symbol = `Approved symbol`,
-#          refseq_id = `RefSeq IDs`,
-#          refseq_id_ncbi = `RefSeq(supplied by NCBI)`) %>%
-#   pivot_longer(cols = refseq_id:refseq_id_ncbi, values_to = "tss") %>%
-#   select(hgnc_symbol, tss) %>%
-#   na.omit() %>%
-#   distinct()
-# 
-# data_enhancers_mutated_annotated <- data_enhancers_mutated %>%
-#   inner_join(data_eplinks_long) %>%
-#   inner_join(mapping_hgnc)
-# 
-# table_enhancer_mutation_by_gene <- data_enhancers_mutated_annotated %>%
-#   group_by(hgnc_symbol) %>%
-#   summarise(count = sum(count),
-#             enhancer_length = sum(length),
-#             expected_count = sum(expected_count)) %>%
-#   arrange(desc(count))
+# figure output
+setwd(figure.path)
+png(file = paste0("enhancer_trinucleotide_dist_", datasetname, ".png"), 
+    width = 1200, height = 800, res = 160)
+ggplot(data = freq_tri, aes(x = trinucleotide, y = count)) + 
+  geom_col() + 
+  ggtitle(paste(datasetname, "enhancer sequence")) + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme(axis.text.x = element_text(angle = 45))
+dev.off()
+
+setwd(figure.path)
+png(file = paste0("enhancer_mutated_trinucleotide_dist_", datasetname, ".png"), 
+    width = 1200, height = 800, res = 160)
+ggplot(data = table_mutation_tri, mapping = aes(x = ref, y = count, 
+                                                fill = paste0(substr(ref, 2, 2),
+                                                              "->",
+                                                              substr(mut, 2, 2)))) + 
+  geom_col() + 
+  labs(fill = "Mutation") +
+  ggtitle(paste(datasetname, "enhancer mutation")) + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme(axis.text.x = element_text(angle = 45))
+dev.off()
+
