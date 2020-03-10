@@ -100,13 +100,14 @@ data_exons_refseq_ext <- data_exons_refseq %>%
   distinct()
 
 data_tss_refseq <- read_delim("refseq_TSS_hg19_170929.bed", delim = '\t', col_names = F) %>%
-  select(chromosome = 1, start = 2, end = 3, tss = 4, strand = 6) %>%
+  select(chromosome = 1, tss_pos = 2, tss = 4, strand = 6) %>%
   filter(chromosome %in% all_chromosomes) %>%
-  arrange(chromosome, start, end, tss) %>%
+  arrange(chromosome, tss_pos, tss) %>%
   distinct()
 data_tss_refseq_ext <- data_tss_refseq %>%
-  select(chromosome, start, end) %>%
-  mutate(start = start - half_tss, end = end + half_tss) %>%
+  select(chromosome, tss_pos) %>%
+  mutate(start = tss_pos - half_tss, end = tss_pos + half_tss) %>%
+  select(-tss_pos) %>%
   distinct()
 
 data_enhancers_exclude <- data_enhancers_permissive %>% 
@@ -159,36 +160,33 @@ mapping_tss_gene <- eplinks_filtered %>%
 # For each TSS, find all enhancers linked to it, and denote by NA if none
 pelinks_raw_unnest <- mapping_tss_enhancer %>%
   mutate(tss = strsplit(tss, ";")) %>%
-  unnest(tss)
-
-data_tss_refseq <- data_tss_refseq %>%
-  select(chromosome, tss_pos = start, tss, strand)
+  unnest(tss) %>% 
+  distinct()
 
 pelinks_sameTSS <- data_tss_refseq %>% 
   left_join(pelinks_raw_unnest, by = "tss") %>%
-  mutate(e_count = ifelse(is.na(enhancer), 0, sapply(strsplit(enhancer, ";"), length)))
+  mutate(e_count = ifelse(is.na(enhancer), 0, sapply(strsplit(enhancer, ";"), length))) %>% 
+  distinct()
 
 
 ## Part 3. Define raw promoters as the regions close to TSS and add it to pelinks
-data_promoters_raw <- pelinks_sameTSS %>% 
+data_promoters_raw <- data_tss_refseq %>% 
   select(chromosome, tss_pos, tss, strand) %>% 
-  mutate(start = tss_pos - half_promoter*ifelse(strand == "+", 1, -1),
-         end = tss_pos + half_promoter*ifelse(strand == "+", 1, -1)) %>%
+  mutate(start = tss_pos - half_promoter,
+         end = tss_pos + half_promoter) %>%
   select(-tss_pos)
 
 # Add the promoter variable in pelinks_sameTSS
 pelinks_sameTSS_complete <- pelinks_sameTSS %>% 
-  bind_cols(data_promoters_raw %>% select(start, end)) %>%
-  mutate(promoter = paste0(chromosome, ":", start, "-", end)) %>%
-  group_by(chromosome, tss, tss_pos, enhancer, e_count) %>%
+  mutate(promoter = paste0(chromosome, ":", tss_pos - half_promoter, "-", tss_pos + half_promoter)) %>%
+  group_by(chromosome, tss_pos, tss, strand, enhancer, e_count) %>%
   summarise(promoter = paste0(promoter, collapse = ";")) %>%
   ungroup() %>%
-  select(tss, chromosome, tss_pos, promoter, enhancer, e_count)
+  select(tss, chromosome, tss_pos, strand, promoter, enhancer, e_count)
 
 ## Output the result: promoter-enhancer links, all promoters, all enhancers, all exons
 data_enhancers_output <- data_enhancers_new
 data_promoters_output <- data_promoters_raw %>% 
-  select(chromosome, start, end, strand) %>%
   mutate(promoter = paste0(chromosome, ":", start, "-", end)) %>% 
   select(chromosome, start, end, promoter, strand)
 data_exons_output <- data_exons_refseq %>% 
