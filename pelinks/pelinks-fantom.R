@@ -188,9 +188,11 @@ pelinks_sameTSS_complete <- pelinks_sameTSS %>%
 data_enhancers_output <- data_enhancers_new
 data_promoters_output <- data_promoters_raw %>% 
   mutate(promoter = paste0(chromosome, ":", start, "-", end)) %>% 
-  select(chromosome, start, end, promoter, strand)
+  select(chromosome, start, end, promoter, strand) %>%
+  distinct()
 data_exons_output <- data_exons_refseq %>% 
-  mutate(exon = paste0(chromosome, ":", start, "-", end))
+  mutate(exon = paste0(chromosome, ":", start, "-", end)) %>%
+  distinct()
 
 setwd(output.path)
 write.csv(eplinks_filtered, "eplinks-fantom-filtered.csv", quote = F, row.names = F)
