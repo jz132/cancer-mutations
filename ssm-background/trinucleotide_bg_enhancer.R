@@ -25,7 +25,6 @@ reverseMerge <- function(count_mat){
 # file paths and file names
 icgc.data.path <- "~/Desktop/Gordanlab/Data/ICGC"
 genomic.interval.path <- "~/r_projects/cancer-mutations/pelinks"
-refseq.data.path <- "~/r_projects/cancer-mutations/pelinks/RefSeq"
 output.path <- "~/r_projects/cancer-mutations/ssm-background/"
 figure.path <- "~/r_projects/cancer-mutations/ssm-background/Figures/"
 
@@ -56,11 +55,6 @@ col_indicator <- paste(ifelse(colnames(data_icgc_try) %in% keep_cols, "?", "-"),
 data_icgc_raw <- read_tsv(filename, col_names = T, col_types = col_indicator) %>%
   mutate(chromosome = paste0("chr", chromosome))
 
-all_types <- data_icgc_raw %>% distinct(consequence_type) %>% pull()
-nonexome <- c("intron_variant", "intragenic_variant", "upstream_gene_variant", 
-              "downstream_gene_variant", "intergenic_region")
-exome <- dplyr::setdiff(all_types, c(nonexome, NA))
-
 # focus on single base substitution in WGS only
 data_icgc_wgs <- data_icgc_raw %>% 
   filter(sequencing_strategy == "WGS", mutation_type == "single base substitution")
@@ -72,10 +66,6 @@ if(!all(data_icgc_wgs$mutated_from_allele == data_icgc_wgs$reference_genome_alle
   
 # import genomic coordinates of enhancers and links between enhancers and tss
 setwd(genomic.interval.path)
-data_eplinks_short <- read_delim("eplinks-fantom-filtered.csv", delim = ",")
-data_eplinks_long <- data_eplinks_short %>%
-  mutate(tss = strsplit(tss, ";")) %>%
-  unnest(tss)
 data_enhancers_fantom <- read_delim("all_enhancers_fantom.txt", delim = "\t",
                                     col_names = c("chromosome", "start", "end", "enhancer"))
 
@@ -91,6 +81,7 @@ data_icgc_wgs_to_join <- data_icgc_wgs %>%
          mut = mutated_to_allele) %>%
   distinct()
 
+# each row is an enhancer
 data_enhancers_mutated <- data_enhancers_fantom %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
   select(chromosome = chromosome.x,
@@ -105,6 +96,7 @@ data_enhancers_mutated <- data_enhancers_fantom %>%
   mutate(length = end - start + 1) %>%
   ungroup()
 
+# identify the enhancer mutations
 # enhancer mutations
 mut_enhancer <- data_enhancers_fantom %>% 
   genome_left_join(data_icgc_wgs_to_join) %>%
@@ -152,42 +144,6 @@ table_mutation_tri <- tibble(
   group_by(ref, mut) %>%
   tally(name = "count") %>% 
   ungroup()
-
-mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_enhancer_mutations_ref))
-freq_tri_mut <- enframe(colSums(mat_tri_mut), name = "trinucleotide", value = "mut_count") %>%
-  arrange(desc(mut_count))
-
-freq_tri <- freq_tri %>%
-  inner_join(freq_tri_mut) %>%
-  mutate(mut_rate = mut_count/count/num_donors)
-
-data_enhancers_mutated <- data_enhancers_mutated %>%
-  mutate(expected_count = as.vector(mat_tri %*% freq_tri$mut_rate * num_donors),
-         var_count = as.vector(mat_tri %*% (freq_tri$mut_rate*(1-freq_tri$mut_rate)*num_donors)))
-
-# per gene
-data_enhancers_mutated_annotated <- data_enhancers_mutated %>%
-  inner_join(data_eplinks_short)
-table_enhancer_mutation_by_gene <- data_enhancers_mutated_annotated %>%
-  group_by(gene) %>%
-  summarise(count = sum(count),
-            enhancer_length = sum(length),
-            expected_count = sum(expected_count),
-            var_count = sum(var_count)) %>%
-  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
-  arrange(desc(count))
-
-# per tss
-data_enhancers_mutated_annotated <- data_enhancers_mutated %>%
-  inner_join(data_eplinks_long)
-table_enhancer_mutation_by_tss <- data_enhancers_mutated_annotated %>%
-  group_by(tss) %>%
-  summarise(count = sum(count),
-            enhancer_length = sum(length),
-            expected_count = sum(expected_count),
-            var_count = sum(var_count)) %>%
-  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
-  arrange(desc(count))
 
 # figure output
 setwd(figure.path)
