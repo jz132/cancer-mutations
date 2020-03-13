@@ -260,7 +260,7 @@ data_promoters_test <- list("l1000_r1000" = data_promoters_refseq_full,
 mut_count <- NULL
 length_promoters_all <- NULL
 for(data_promoters in data_promoters_test){
-  data_promoters <- makeNonOverlap(data_promoters)
+  data_promoters <- makeNonOverlap(data_promoters, is.bed.format = T)
   data_exons_in_promoters <- data_exons_refseq_nolap %>%
     genome_inner_join(data_promoters) %>%
     mutate(start = pmax(start.x, start.y), end = pmin(end.x, end.y)) %>% 
@@ -281,7 +281,8 @@ for(data_promoters in data_promoters_test){
            icgc_donor_id,
            ref,
            mut) %>%
-    distinct()
+    distinct() %>%
+  dplyr::setdiff(mut_exon)
   
   mut_count <- c(mut_count, nrow(mut_promoter))
   length_promoters_all <- c(length_promoters_all, length_promoters)
