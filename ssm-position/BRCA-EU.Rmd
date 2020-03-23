@@ -352,7 +352,7 @@ data_exons_mutated <- data_exons_mutated %>%
          var_count = as.vector(mat_tri%*%(freq_tri$mut_rate*(1-freq_tri$mut_rate))*num_donors))
 ```
 
-The transcripts whose exon harbor the greatest number of mutations:
+<!-- The transcripts whose exon harbor the greatest number of mutations: -->
 
 ```{r top mutated tss exon}
 # annotate by refseq 
@@ -387,10 +387,11 @@ table_exon_mutation_by_tss <- data_exons_mutated_annotated %>%
             exon_length = sum(length),
             expected_count = sum(expected_count),
             var_count = sum(var_count)) %>%
-  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  mutate(log.p_value = -log(dpois(count, expected_count) +
+           ppois(count, expected_count, lower.tail = F), 10)) %>%
   arrange(desc(count))
 
-kable(table_exon_mutation_by_tss %>% dplyr::slice(1:20))
+# kable(table_exon_mutation_by_tss %>% dplyr::slice(1:20))
 ```
 
 The genes whose exons harbor the greatest number of mutations:
@@ -404,7 +405,8 @@ table_exon_mutation_by_gene <- data_exons_mutated_annotated %>%
             exon_length = sum(length),
             expected_count = sum(expected_count),
             var_count = sum(var_count)) %>%
-  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  mutate(log.p_value = -log(dpois(count, expected_count) +
+           ppois(count, expected_count, lower.tail = F), 10)) %>%
   arrange(desc(count))
 
 kable(table_exon_mutation_by_gene %>% dplyr::slice(1:20))
@@ -465,7 +467,7 @@ data_promoters_mutated <- data_promoters_mutated %>%
          var_count = as.vector(mat_tri%*%(freq_tri$mut_rate*(1-freq_tri$mut_rate))*num_donors))
 ```
 
-The transcripts whose promoters harbor the greatest number of mutations:
+<!-- The transcripts whose promoters harbor the greatest number of mutations: -->
 
 ```{r top mutated tss promoter, echo=F}
 # annotate by refseq 
@@ -502,10 +504,11 @@ table_promoter_mutation_by_tss <- data_promoters_mutated_annotated %>%
             promoter_length = sum(length),
             expected_count = sum(expected_count),
             var_count = sum(var_count)) %>%
-  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  mutate(log.p_value = -log(dpois(count, expected_count) +
+           ppois(count, expected_count, lower.tail = F), 10)) %>%
   arrange(desc(count))
 
-kable(table_promoter_mutation_by_tss %>% dplyr::slice(1:20))
+# kable(table_promoter_mutation_by_tss %>% dplyr::slice(1:20))
 ```
 
 The genes whose promoters harbor the greatest number of mutations:
@@ -519,7 +522,8 @@ table_promoter_mutation_by_gene <- data_promoters_mutated_annotated %>%
             promoter_length = sum(length),
             expected_count = sum(expected_count),
             var_count = sum(var_count)) %>%
-  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  mutate(log.p_value = -log(dpois(count, expected_count) +
+           ppois(count, expected_count, lower.tail = F), 10)) %>%
   arrange(desc(count))
 
 kable(table_promoter_mutation_by_gene %>% dplyr::slice(1:20))
@@ -578,7 +582,7 @@ data_enhancers_mutated <- data_enhancers_mutated %>%
          var_count = as.vector(mat_tri%*%(freq_tri$mut_rate*(1-freq_tri$mut_rate))*num_donors))
 ```
 
-The transcripts whose enhancers harbor the greatest number of mutations:
+<!-- The transcripts whose enhancers harbor the greatest number of mutations: -->
 
 ```{r top mutated tss}
 # per tss
@@ -590,10 +594,11 @@ table_enhancer_mutation_by_tss <- data_enhancers_mutated_annotated_tss %>%
             enhancer_length = sum(length),
             expected_count = sum(expected_count),
             var_count = sum(var_count)) %>%
-  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  mutate(log.p_value = -log(dpois(count, expected_count) +
+           ppois(count, expected_count, lower.tail = F), 10)) %>%
   arrange(desc(count))
 
-kable(table_enhancer_mutation_by_tss %>% dplyr::slice(1:20))
+# kable(table_enhancer_mutation_by_tss %>% dplyr::slice(1:20))
 ```
 
 The genes whose enhancers harbor the greatest number of mutations:
@@ -608,7 +613,8 @@ table_enhancer_mutation_by_gene <- data_enhancers_mutated_annotated_gene %>%
             enhancer_length = sum(length),
             expected_count = sum(expected_count),
             var_count = sum(var_count)) %>%
-  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
+  mutate(log.p_value = -log(dpois(count, expected_count) +
+           ppois(count, expected_count, lower.tail = F), 10)) %>%
   arrange(desc(count))
 
 kable(table_enhancer_mutation_by_gene %>% dplyr::slice(1:20))
@@ -616,36 +622,46 @@ kable(table_enhancer_mutation_by_gene %>% dplyr::slice(1:20))
 
 ## Regulatory mutations
 
-The transcripts whose regulatory regions harbor the greatest number of mutations:
+<!-- The transcripts whose regulatory regions have the most significant excess of mutations: -->
 
 ```{r top mutated tss all regulatory regions}
+# here we use left join but please note that full join will give us 
+# a different result since fantom enhancers are linked with tss
+# that are no longer valid in the current Refseq
 table_regulatory_mutation_by_tss <- table_promoter_mutation_by_tss %>%
-  full_join(table_enhancer_mutation_by_tss, by = "tss") %>%
+  left_join(table_enhancer_mutation_by_tss, by = "tss") %>%
   mutate(count = replace_na(count.x, 0) + replace_na(count.y, 0), 
-         regulatory_length = replace_na(promoter_length, 0) + replace_na(enhancer_length, 0), 
+         total_length = replace_na(promoter_length, 0) + replace_na(enhancer_length, 0), 
          expected_count = replace_na(expected_count.x, 0) + replace_na(expected_count.y, 0),
          var_count = replace_na(var_count.x, 0) + replace_na(var_count.y, 0)) %>%
   arrange(desc(count)) %>%
-  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
-  select(tss, count, regulatory_length, expected_count, var_count, p_value)
+  mutate(log.p_value = -log(dpois(count, expected_count) +
+           ppois(count, expected_count, lower.tail = F), 10)) %>%
+  select(tss, count, promoter_length, enhancer_length, total_length, 
+         expected_count, log.p_value)
 
-kable(table_regulatory_mutation_by_tss %>% arrange(desc(count)) %>% dplyr::slice(1:20))
+# kable(table_regulatory_mutation_by_tss %>% arrange(desc(log.p_value)) %>% dplyr::slice(1:20))
 ```
 
-The genes whose regulatory regions harbor the greatest number of mutations:
+The genes whose regulatory regions have the most significant excess of mutations:
 
 ```{r top mutated genes all regulatory regions}
+# here we use left join but please note that full join will give us 
+# a different result since fantom enhancers are linked with tss
+# that are no longer valid in the current Refseq
 table_regulatory_mutation_by_gene <- table_promoter_mutation_by_gene %>%
-  full_join(table_enhancer_mutation_by_gene, by = "gene") %>%
+  left_join(table_enhancer_mutation_by_gene, by = "gene") %>%
   mutate(count = replace_na(count.x, 0) + replace_na(count.y, 0), 
-         regulatory_length = replace_na(promoter_length, 0) + replace_na(enhancer_length, 0), 
+         total_length = replace_na(promoter_length, 0) + replace_na(enhancer_length, 0), 
          expected_count = replace_na(expected_count.x, 0) + replace_na(expected_count.y, 0),
          var_count = replace_na(var_count.x, 0) + replace_na(var_count.y, 0)) %>%
   arrange(desc(count)) %>%
-  mutate(p_value = ppois(count, expected_count, lower.tail = F)) %>%
-  select(gene, count, regulatory_length, expected_count, var_count, p_value)
+  mutate(log.p_value = -log(dpois(count, expected_count) +
+           ppois(count, expected_count, lower.tail = F), 10)) %>%
+  select(gene, count, promoter_length, enhancer_length, total_length, 
+         expected_count, log.p_value)
 
-kable(table_regulatory_mutation_by_gene %>% arrange(desc(count)) %>% dplyr::slice(1:20))
+kable(table_regulatory_mutation_by_gene %>% arrange(desc(log.p_value)) %>% dplyr::slice(1:20))
 ```
 
 
