@@ -68,7 +68,8 @@ if(!all(data_icgc_wgs$mutated_from_allele == data_icgc_wgs$reference_genome_alle
 # import genomic coordinates of exons
 setwd(genomic.interval.path)
 data_exons_refseq <- read_delim("all_exons_refseq.txt", delim = "\t", 
-                                col_names = c("chromosome", "start", "end", "exon"))
+                                col_names = c("chromosome", "start", "end", "exon")) %>%
+  arrange(chromosome, start, end)
 
 # count the number of mutations in each exon
 data_icgc_wgs_to_join <- data_icgc_wgs %>%
@@ -133,6 +134,7 @@ seq_exon_mutations_mut <- replaceLetterAt(seq_exon_mutations_ref,
                                                           ncol = 3,
                                                           byrow = T), 
                                               mut_exon_bg$mut)
+
 table_mutation_tri <- tibble(
   ref = as.character(seq_exon_mutations_ref),
   ref_rev = as.character(reverseComplement(seq_exon_mutations_ref)),
@@ -142,7 +144,16 @@ table_mutation_tri <- tibble(
   mutate(ref = ifelse(ref < ref_rev, ref, ref_rev),
          mut = ifelse(ref < ref_rev, mut, mut_rev)) %>%
   group_by(ref, mut) %>%
-  tally(name = "count")
+  tally(name = "count") %>%
+  ungroup()
+
+mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_exon_mutations_ref))
+freq_tri_mut <- enframe(colSums(mat_tri_mut), name = "trinucleotide", value = "mut_count") %>%
+  arrange(desc(mut_count))
+
+freq_tri <- freq_tri %>%
+  inner_join(freq_tri_mut) %>%
+  mutate(mut_rate = mut_count/count/num_donors)
 
 # figure output
 setwd(figure.path)

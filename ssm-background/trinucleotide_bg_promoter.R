@@ -69,6 +69,7 @@ if(!all(data_icgc_wgs$mutated_from_allele == data_icgc_wgs$reference_genome_alle
 setwd(genomic.interval.path)
 data_promoters_refseq <- read_delim("all_promoters_refseq.txt", delim = "\t", 
                                 col_names = c("chromosome", "start", "end", "promoter")) %>%
+  arrange(chromosome, start, end) %>%
   distinct() # need distinct here because we are not including strand column
 
 # count the number of mutations in each promoter
@@ -134,6 +135,7 @@ seq_promoter_mutations_mut <- replaceLetterAt(seq_promoter_mutations_ref,
                                                           ncol = 3,
                                                           byrow = T), 
                                               mut_promoter_bg$mut)
+
 table_mutation_tri <- tibble(
   ref = as.character(seq_promoter_mutations_ref),
   ref_rev = as.character(reverseComplement(seq_promoter_mutations_ref)),
@@ -143,7 +145,16 @@ table_mutation_tri <- tibble(
   mutate(ref = ifelse(ref < ref_rev, ref, ref_rev),
          mut = ifelse(ref < ref_rev, mut, mut_rev)) %>%
   group_by(ref, mut) %>%
-  tally(name = "count")
+  tally(name = "count") %>%
+  ungroup()
+
+mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_promoter_mutations_ref))
+freq_tri_mut <- enframe(colSums(mat_tri_mut), name = "trinucleotide", value = "mut_count") %>%
+  arrange(desc(mut_count))
+
+freq_tri <- freq_tri %>%
+  inner_join(freq_tri_mut) %>%
+  mutate(mut_rate = mut_count/count/num_donors)
 
 # figure output
 setwd(figure.path)

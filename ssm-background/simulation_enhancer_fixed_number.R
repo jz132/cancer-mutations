@@ -1,6 +1,4 @@
 source("~/r_projects/cancer-mutations/ssm-background/trinucleotide_bg_enhancer.R")
-rm(list = ls(pattern = "^data_icgc")) # free some space
-
 options(tibble.width = Inf)
 slice <- dplyr::slice
 
@@ -107,6 +105,24 @@ data_enhancer_mutation_prediction <- data_enhancer_mutation_prediction %>%
   inner_join(table_mutation_tri_mut_type)
 
 # mutation rate for each of the 32 trinucleotides
+# the tri-nucleotide background of the mutations
+seq_enhancers_fantom <- getSeq(genome, names = data_enhancers_fantom$chromosome,
+                               start = data_enhancers_fantom$start,
+                               end = data_enhancers_fantom$end)
+mat_tri <- reverseMerge(trinucleotideFrequency(seq_enhancers_fantom))
+freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count")
+
+seq_enhancer_mutations_ref <- getSeq(genome, names = mut_enhancer_bg$chromosome,
+                                     start = mut_enhancer_bg$start,
+                                     end = mut_enhancer_bg$end)
+mat_tri_mut <- reverseMerge(trinucleotideFrequency(seq_enhancer_mutations_ref))
+freq_tri_mut <- enframe(colSums(mat_tri_mut), name = "trinucleotide", value = "mut_count") %>%
+  arrange(desc(mut_count))
+
+freq_tri <- freq_tri %>%
+  inner_join(freq_tri_mut) %>%
+  mutate(mut_rate = mut_count/count/num_donors)
+
 tri_mut_rate <- freq_tri %>% pull(mut_rate) 
 names(tri_mut_rate) <- freq_tri %>% pull(trinucleotide)
 
@@ -128,12 +144,10 @@ for(enhancer_ex in enhancers_w_mutation){
   vec_tri <- reverseMerge(trinucleotideFrequency(seq_enhancers_fantom[enhancer_ex]))
   n_tri <- length(vec_tri)
   
-  # first random sampling from a binomial distribution for the number of mutated trinucleotide
-  n_mut_sim <- matrix(0, nrow = n_run, ncol = n_tri)
+  # first random sampling from a multinomial distribution for 
+  # the number of mutated trinucleotide, controlling the same number of mutations as real patients
+  n_mut_sim <- t(rmultinom(n_run, data_enhancers_mutated$count[enhancer_ex], vec_tri*tri_mut_rate))
   colnames(n_mut_sim) <- names(vec_tri)
-  for(j in 1:ncol(n_mut_sim)){
-    n_mut_sim[,j] <- rbinom(n_run, vec_tri[j]*num_donors, tri_mut_rate[j])
-  }
   
   # then random sampling from a multinomial distribution for 
   # each trinucleotide to trinucleotide mutation
@@ -186,25 +200,12 @@ for(enhancer_ex in enhancers_w_mutation){
   
   mut_enhancer_actual_effect <- absmax(mut_enhancer_actual$diff) 
   mut_enhancer_sim_effect <- apply(mut_sim_effect_table, 1, absmax)
-  p_value <- sum(abs(mut_enhancer_sim_effect) >= abs(mut_enhancer_actual_effect))/n_run
+  p_value <- sum(abs(mut_enhancer_sim_effect) > abs(mut_enhancer_actual_effect))/n_run
   p_value_list[enhancer_ex] <- p_value
   
   print(p_value)
 }
 
 # setwd(output.path)
-# write.table(p_value_list, "p_value_list.txt", row.names = F, col.names = F)
-
-
-# code in development
-p_values <- p_value_list
-x <- qunif(ppoints(length(p_values)))
-qqplot(-log(x, base = 10), -log(p_values, base = 10), 
-       main = "QQ-plot of Enhancer P-values", 
-       xlab = "expected -log(p, base=10)",
-       ylab = "observed -log(p, base=10)")
-abline(a = 0, b = 1)
-
-data_enhancers_mutated <- data_enhancers_mutated %>% 
-  mutate(p_value = p_value_list)
+# write.table(p_value_list, "p_value_list_fixed.txt", row.names = F, col.names = F)
 
