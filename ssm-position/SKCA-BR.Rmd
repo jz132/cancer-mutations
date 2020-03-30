@@ -329,9 +329,9 @@ mut_exon_bg <- mut_exon %>%
   mutate(start = start - 1, end = end + 1)
 
 # exon sequences and trinucleotide frequencies
-seq_exons_refseq <- getSeq(genome, names = data_exons_refseq$chromosome,
-                               start = data_exons_refseq$start,
-                               end = data_exons_refseq$end)
+seq_exons_refseq <- getSeq(genome, names = data_exons_mutated$chromosome,
+                               start = data_exons_mutated$start,
+                               end = data_exons_mutated$end)
 mat_tri <- reverseMerge(trinucleotideFrequency(seq_exons_refseq))
 freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count")
 
@@ -444,9 +444,9 @@ mut_promoter_bg <- mut_promoter %>%
   mutate(start = start - 1, end = end + 1)
 
 # promoter sequences and trinucleotide frequencies
-seq_promoters_refseq <- getSeq(genome, names = data_promoters_refseq$chromosome,
-                               start = data_promoters_refseq$start,
-                               end = data_promoters_refseq$end)
+seq_promoters_refseq <- getSeq(genome, names = data_promoters_mutated$chromosome,
+                               start = data_promoters_mutated$start,
+                               end = data_promoters_mutated$end)
 mat_tri <- reverseMerge(trinucleotideFrequency(seq_promoters_refseq))
 freq_tri <- enframe(colSums(mat_tri), name = "trinucleotide", value = "count")
 
