@@ -409,7 +409,7 @@ table_exon_mutation_by_gene <- data_exons_mutated_annotated %>%
            ppois(count, expected_count, lower.tail = F), 10)) %>%
   arrange(desc(count))
 
-kable(table_exon_mutation_by_gene %>% dplyr::slice(1:20))
+kable(table_exon_mutation_by_gene %>% arrange(desc(log.p_value)) %>% dplyr::slice(1:20))
 ```
 
 ## Promoter mutations
@@ -526,7 +526,7 @@ table_promoter_mutation_by_gene <- data_promoters_mutated_annotated %>%
            ppois(count, expected_count, lower.tail = F), 10)) %>%
   arrange(desc(count))
 
-kable(table_promoter_mutation_by_gene %>% dplyr::slice(1:20))
+kable(table_promoter_mutation_by_gene %>% arrange(desc(log.p_value)) %>% dplyr::slice(1:20))
 ```
 
 ## Enhancer mutations
@@ -589,6 +589,8 @@ data_enhancers_mutated <- data_enhancers_mutated %>%
 data_enhancers_mutated_annotated_tss <- data_enhancers_mutated %>%
   inner_join(data_eplinks_long)
 table_enhancer_mutation_by_tss <- data_enhancers_mutated_annotated_tss %>%
+  select(-gene) %>% 
+  distinct() %>%
   group_by(tss) %>%
   summarise(count = sum(count),
             enhancer_length = sum(length),
@@ -608,6 +610,8 @@ The genes whose enhancers harbor the greatest number of mutations:
 data_enhancers_mutated_annotated_gene <- data_enhancers_mutated %>%
   inner_join(data_eplinks_short)
 table_enhancer_mutation_by_gene <- data_enhancers_mutated_annotated_gene %>%
+  select(-tss) %>% 
+  distinct() %>%
   group_by(gene) %>%
   summarise(count = sum(count),
             enhancer_length = sum(length),
@@ -617,7 +621,7 @@ table_enhancer_mutation_by_gene <- data_enhancers_mutated_annotated_gene %>%
            ppois(count, expected_count, lower.tail = F), 10)) %>%
   arrange(desc(count))
 
-kable(table_enhancer_mutation_by_gene %>% dplyr::slice(1:20))
+kable(table_enhancer_mutation_by_gene %>% arrange(desc(log.p_value)) %>% dplyr::slice(1:20))
 ```
 
 ## Regulatory mutations
