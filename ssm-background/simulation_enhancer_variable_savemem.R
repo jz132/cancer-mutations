@@ -22,7 +22,7 @@ DNAToBin <- function(DNA){
 # file paths and file names
 synthetic.mutation.path <- "~/Desktop/Gordanlab/Data/synthetic_mutations"
 qbic.model.path <- "~/Desktop/Gordanlab/Data/qbic/predmodel"
-output.path <- "~/r_projects/cancer-mutations/ssm-background/"
+output.path <- "~/r_projects/cancer-mutations/ssm-background/output"
 
 # import the 12-mer prediction table
 setwd(qbic.model.path)
@@ -165,3 +165,5 @@ for(enhancer_ex in enhancers_w_mutation){
   print(p_value)
 }
 
+# setwd(output.path)
+# write.table(p_value_list, "p_value_list_enhancer_variable_savemem.txt", row.names = F, col.names = F)
