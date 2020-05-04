@@ -70,7 +70,10 @@ data_enhancers_fantom <- read_delim("all_enhancers_fantom.txt", delim = "\t",
                                     col_names = c("chromosome", "start", "end", "enhancer")) %>%
   arrange(chromosome, start, end)
 
-# count the number of mutations in each enhancer
+data_exons_refseq <- read_delim("all_exons_refseq.txt", delim = "\t", 
+                                col_names = c("chromosome", "start", "end", "exon"))
+
+# count the number of mutations in each promoter
 data_icgc_wgs_to_join <- data_icgc_wgs %>%
   filter(!is.na(consequence_type)) %>% 
   select(chromosome = chromosome,
@@ -80,6 +83,7 @@ data_icgc_wgs_to_join <- data_icgc_wgs %>%
          icgc_donor_id,
          ref = reference_genome_allele,
          mut = mutated_to_allele) %>%
+  genome_anti_join(data_exons_refseq, by = c("chromosome", "start", "end")) %>%
   distinct()
 
 # each row is an enhancer
