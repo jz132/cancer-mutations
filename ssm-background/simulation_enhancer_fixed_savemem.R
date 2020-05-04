@@ -1,4 +1,4 @@
-source("~/r_projects/cancer-mutations/ssm-background/trinucleotide_bg_promoter.R")
+source("~/r_projects/cancer-mutations/ssm-background/trinucleotide_bg_enhancer.R")
 rm(list = ls(pattern = "^data_icgc")) # free some space
 
 options(tibble.width = Inf)
@@ -52,42 +52,42 @@ rownames(mat_prop) <- names(tri_mut_rate)
 ## simulation code ##
 set.seed(1234)
 n_run <- 10^2
-promoters_w_mutation <- which(data_promoters_mutated$count > 0)
-p_value_list <- rep(1, nrow(data_promoters_mutated))
+enhancers_w_mutation <- which(data_enhancers_mutated$count > 0)
+p_value_list <- rep(1, nrow(data_enhancers_mutated))
 
-for(promoter_ex in promoters_w_mutation[1:100]){
-  print(promoter_ex)
+for(enhancer_ex in enhancers_w_mutation){
+  print(enhancer_ex)
   
-  ## Part 1: Generate all possible single mutations for promoters with mutations ##
-  # get the location and sequence of the promoter
-  data_promoter_ex <- data_promoters_refseq %>% slice(promoter_ex) # the promoter location
-  seq_promoter_ex <- seq_promoters_refseq[[promoter_ex]] # the promoter sequence
+  ## Part 1: Generate all possible single mutations for enhancers with mutations ##
+  # get the location and sequence of the enhancer
+  data_enhancer_ex <- data_enhancers_fantom %>% slice(enhancer_ex) # the enhancer location
+  seq_enhancer_ex <- seq_enhancers_fantom[[enhancer_ex]] # the enhancer sequence
   
   # generate all possible mutations and store in a vcf format table
-  data_promoter_mutation_ex_vcf <- tibble(
-    chromosome = data_promoter_ex$chromosome,
-    pos = seq(data_promoter_ex$start, data_promoter_ex$end),
-    promoter = promoter_ex
+  data_enhancer_mutation_ex_vcf <- tibble(
+    chromosome = data_enhancer_ex$chromosome,
+    pos = seq(data_enhancer_ex$start, data_enhancer_ex$end),
+    enhancer = enhancer_ex
   ) %>% 
-    mutate(ref = unlist(strsplit(as.character(seq_promoter_ex), ""))) %>% 
-    slice(rep(seq(1, length(seq_promoter_ex)), each = 4)) %>% 
-    mutate(mut = rep(c("A", "C", "G", "T"), length(seq_promoter_ex))) %>% 
+    mutate(ref = unlist(strsplit(as.character(seq_enhancer_ex), ""))) %>% 
+    slice(rep(seq(1, length(seq_enhancer_ex)), each = 4)) %>% 
+    mutate(mut = rep(c("A", "C", "G", "T"), length(seq_enhancer_ex))) %>% 
     filter(ref != mut)
   
   # get the 11-mer mutation context for all synthetic mutations
-  seq_promoter_mutation_sim <- getSeq(genome,
-                                      names = data_promoter_mutation_ex_vcf$chromosome, 
-                                      start = data_promoter_mutation_ex_vcf$pos - 5,
-                                      end = data_promoter_mutation_ex_vcf$pos + 5)
+  seq_enhancer_mutation_sim <- getSeq(genome,
+                                      names = data_enhancer_mutation_ex_vcf$chromosome, 
+                                      start = data_enhancer_mutation_ex_vcf$pos - 5,
+                                      end = data_enhancer_mutation_ex_vcf$pos + 5)
   
   ## Part 2: Predict the effect of the synthetic mutations using QBiC ##
-  data_promoter_mutation_sim <- data_promoter_mutation_ex_vcf %>% 
-    mutate(twimer = paste0(seq_promoter_mutation_sim, mut)) %>%
+  data_enhancer_mutation_sim <- data_enhancer_mutation_ex_vcf %>% 
+    mutate(twimer = paste0(seq_enhancer_mutation_sim, mut)) %>%
     mutate(idx = DNAToBin(twimer)) %>%
     mutate(idx = strtoi(idx, base = 2))
   
   # use the 12-mer table to predict the effect
-  data_promoter_mutation_prediction <- data_promoter_mutation_sim %>% 
+  data_enhancer_mutation_prediction <- data_enhancer_mutation_sim %>% 
     inner_join(table_12mer) %>%
     mutate(ref_tri = substr(twimer, 5, 7)) %>%
     mutate(mut_tri = paste0(substr(ref_tri, 1, 1), mut, substr(ref_tri, 3, 3))) %>% 
@@ -99,16 +99,14 @@ for(promoter_ex in promoters_w_mutation[1:100]){
     inner_join(table_mutation_tri_mut_type)
   
   ## Part 3: Simulation ##
-  # the count of each trinucleotide in the promoter
-  vec_tri <- reverseMerge(trinucleotideFrequency(seq_promoters_refseq[promoter_ex]))
+  # the count of each trinucleotide in the enhancer
+  vec_tri <- reverseMerge(trinucleotideFrequency(seq_enhancers_fantom[enhancer_ex]))
   n_tri <- length(vec_tri)
   
-  # first random sampling from a binomial distribution for the number of mutated trinucleotide
-  n_mut_sim <- matrix(0, nrow = n_run, ncol = n_tri)
+  # first random sampling from a multinomial distribution for 
+  # the number of mutated trinucleotide, controlling the same number of mutations as real patients
+  n_mut_sim <- t(rmultinom(n_run, data_enhancers_mutated$count[enhancer_ex], vec_tri*tri_mut_rate))
   colnames(n_mut_sim) <- names(vec_tri)
-  for(j in 1:ncol(n_mut_sim)){
-    n_mut_sim[,j] <- rbinom(n_run, vec_tri[j]*num_donors, tri_mut_rate[j])
-  }
   
   # then random sampling from a multinomial distribution for 
   # each trinucleotide to trinucleotide mutation
@@ -135,7 +133,7 @@ for(promoter_ex in promoters_w_mutation[1:100]){
         mut_sim_effect_table[i,j] <- 0
       }
       else{
-        data_temp <- data_promoter_mutation_prediction %>%
+        data_temp <- data_enhancer_mutation_prediction %>%
           filter(mut_type == j)
         if(nrow(data_temp) != 0){
           sim_result <- sample(data_temp$diff, n_mut, replace = T)
@@ -146,26 +144,23 @@ for(promoter_ex in promoters_w_mutation[1:100]){
   }
   
   # mutation effect prediction for the actual data
-  mut_promoter_actual <- mut_promoter %>% 
-    genome_inner_join(data_promoter_ex) %>%
+  mut_enhancer_actual <- mut_enhancer %>% 
+    genome_inner_join(data_enhancer_ex) %>%
     select(chromosome = chromosome.x,
            pos = start.x,
            icgc_mutation_id,
            icgc_donor_id,
            ref,
            mut) %>%
-    inner_join(data_promoter_mutation_prediction)
+    inner_join(data_enhancer_mutation_prediction)
   
-  mut_promoter_actual_effect <- absmax(mut_promoter_actual$diff) 
-  mut_promoter_sim_effect <- apply(mut_sim_effect_table, 1, absmax)
-  p_value <- sum(abs(mut_promoter_sim_effect) >= abs(mut_promoter_actual_effect))/n_run
-  p_value_list[promoter_ex] <- p_value
+  mut_enhancer_actual_effect <- absmax(mut_enhancer_actual$diff) 
+  mut_enhancer_sim_effect <- apply(mut_sim_effect_table, 1, absmax)
+  p_value <- sum(abs(mut_enhancer_sim_effect) >= abs(mut_enhancer_actual_effect))/n_run
+  p_value_list[enhancer_ex] <- p_value
   
-  print(mut_promoter_actual)
-  print(mut_promoter_actual_effect)
   print(p_value)
 }
 
 # setwd(output.path)
-# write.table(p_value_list, "p_value_list_promoter_variable_savemem.txt", row.names = F, col.names = F)
-
+# write.table(p_value_list, "p_value_list_enhancer_fixed_savemem.txt", row.names = F, col.names = F)

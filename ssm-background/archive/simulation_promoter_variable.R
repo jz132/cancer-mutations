@@ -20,7 +20,6 @@ DNAToBin <- function(DNA){
 }
 
 # file paths and file names
-synthetic.mutation.path <- "~/Desktop/Gordanlab/Data/synthetic_mutations"
 qbic.model.path <- "~/Desktop/Gordanlab/Data/qbic/predmodel"
 output.path <- "~/r_projects/cancer-mutations/ssm-background/output"
 

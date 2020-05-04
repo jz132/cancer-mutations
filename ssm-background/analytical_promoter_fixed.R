@@ -1,5 +1,10 @@
+t0 <- proc.time()
+
 source("~/r_projects/cancer-mutations/ssm-background/trinucleotide_bg_promoter.R")
 rm(list = ls(pattern = "^data_icgc")) # free some space
+
+t1 <- proc.time()
+print(t1 - t0)
 
 options(tibble.width = Inf)
 slice <- dplyr::slice
@@ -22,40 +27,36 @@ DNAToBin <- function(DNA){
 # file paths and file names
 qbic.model.path <- "~/Desktop/Gordanlab/Data/qbic/predmodel"
 output.path <- "~/r_projects/cancer-mutations/ssm-background/output"
+filename_table_12mer <- "prediction6mer.Homo_sapiens|NA|Shen2018|MYC-MAX.txt"
 
 # import the 12-mer prediction table
 setwd(qbic.model.path)
 # wondering if there is a way to use read_table() to correctly read this table in
-table_12mer <- read.table("prediction6mer.Homo_sapiens|NA|Shen2018|MYC-MAX.txt", 
-                              header = T, fill = T, blank.lines.skip = F)
+table_12mer <- read.table(filename_table_12mer, header = T, fill = T, 
+                          blank.lines.skip = F)
 table_12mer <- as_tibble(table_12mer) %>% 
   mutate(idx = row_number() - 1)
 
-# define mutation type based on the alphabetical order of the trinucleotides
-table_mutation_tri_mut_type <- table_mutation_tri %>%
-  select(ref_tri = ref, 
-         mut_tri = mut) %>% 
+# proportion of 3 possible mutations for each of the 32 trinucleotides
+table_mutation_tri_mut_rate <- table_mutation_tri %>% 
+  group_by(ref) %>% 
+  mutate(prop = count/sum(count)) %>% 
+  ungroup() %>% 
+  inner_join(freq_tri %>% select(ref = trinucleotide, mut_rate)) %>%
+  mutate(tri_mut_rate = prop*mut_rate) %>% 
+  select(ref_tri = ref,
+         mut_tri = mut,
+         tri_mut_rate) %>% 
   mutate(mut_type = row_number())
 
-# mutation rate for each of the 32 trinucleotides
-tri_mut_rate <- freq_tri %>% pull(mut_rate) 
-names(tri_mut_rate) <- freq_tri %>% pull(trinucleotide)
-
-# proportion of 3 possible mutations for each of the 32 trinucleotides
-mat_prop <- matrix(table_mutation_tri %>% 
-                     group_by(ref) %>% 
-                     mutate(prop = count/sum(count)) %>% 
-                     pull(prop),
-                   nrow = 32, ncol = 3, byrow = T) 
-rownames(mat_prop) <- names(tri_mut_rate)
-
-## simulation code ##
-set.seed(1234)
-n_run <- 10^2
 promoters_w_mutation <- which(data_promoters_mutated$count > 0)
+mut_effect <- rep(0, nrow(data_promoters_mutated))
 p_value_list <- rep(1, nrow(data_promoters_mutated))
 
-for(promoter_ex in promoters_w_mutation[1:100]){
+t2 <- proc.time()
+print(t2 - t1)
+
+for(promoter_ex in promoters_w_mutation){
   print(promoter_ex)
   
   ## Part 1: Generate all possible single mutations for promoters with mutations ##
@@ -88,7 +89,7 @@ for(promoter_ex in promoters_w_mutation[1:100]){
   
   # use the 12-mer table to predict the effect
   data_promoter_mutation_prediction <- data_promoter_mutation_sim %>% 
-    inner_join(table_12mer) %>%
+    mutate(diff = table_12mer$diff[idx+1]) %>%
     mutate(ref_tri = substr(twimer, 5, 7)) %>%
     mutate(mut_tri = paste0(substr(ref_tri, 1, 1), mut, substr(ref_tri, 3, 3))) %>% 
     mutate(ref_tri_rev = as.character(reverseComplement(DNAStringSet(ref_tri))),
@@ -96,54 +97,8 @@ for(promoter_ex in promoters_w_mutation[1:100]){
     mutate(ref_tri = ifelse(ref_tri < ref_tri_rev, ref_tri, ref_tri_rev),
            mut_tri = ifelse(ref_tri < ref_tri_rev, mut_tri, mut_tri_rev)) %>% 
     select(-c(ref_tri_rev, mut_tri_rev))  %>% 
-    inner_join(table_mutation_tri_mut_type)
-  
-  ## Part 3: Simulation ##
-  # the count of each trinucleotide in the promoter
-  vec_tri <- reverseMerge(trinucleotideFrequency(seq_promoters_refseq[promoter_ex]))
-  n_tri <- length(vec_tri)
-  
-  # first random sampling from a binomial distribution for the number of mutated trinucleotide
-  n_mut_sim <- matrix(0, nrow = n_run, ncol = n_tri)
-  colnames(n_mut_sim) <- names(vec_tri)
-  for(j in 1:ncol(n_mut_sim)){
-    n_mut_sim[,j] <- rbinom(n_run, vec_tri[j]*num_donors, tri_mut_rate[j])
-  }
-  
-  # then random sampling from a multinomial distribution for 
-  # each trinucleotide to trinucleotide mutation
-  n_mut_sim_expanded <- matrix(0, nrow = n_run, ncol = 3*n_tri)
-  for(i in 1:n_run){
-    for(j in 1:ncol(n_mut_sim)){
-      if(n_mut_sim[i,j] != 0){
-        n_mut_sim_expanded[i,(3*j-2):(3*j)] <- rmultinom(1, n_mut_sim[i,j], mat_prop[j,])
-      }
-    }
-  }
-  
-  # a summary table for the number of trinucleotide to trinucleotide mutations
-  # table_mutation_tri_result <- table_mutation_tri %>% 
-  #   select(ref, mut) %>%
-  #   mutate(sim_count = colSums(n_mut_sim_expanded))
-  
-  # mutation effect prediction for the simulated results
-  mut_sim_effect_table <- n_mut_sim_expanded
-  for(i in 1:nrow(n_mut_sim_expanded)){
-    for(j in 1:ncol(n_mut_sim_expanded)){
-      n_mut <- n_mut_sim_expanded[i,j]
-      if(n_mut == 0){
-        mut_sim_effect_table[i,j] <- 0
-      }
-      else{
-        data_temp <- data_promoter_mutation_prediction %>%
-          filter(mut_type == j)
-        if(nrow(data_temp) != 0){
-          sim_result <- sample(data_temp$diff, n_mut, replace = T)
-          mut_sim_effect_table[i,j] <- absmax(sim_result)
-        }
-      }
-    }
-  }
+    inner_join(table_mutation_tri_mut_rate) %>% 
+    mutate(cond_tri_mut_rate = tri_mut_rate/sum(tri_mut_rate))
   
   # mutation effect prediction for the actual data
   mut_promoter_actual <- mut_promoter %>% 
@@ -156,16 +111,27 @@ for(promoter_ex in promoters_w_mutation[1:100]){
            mut) %>%
     inner_join(data_promoter_mutation_prediction)
   
-  mut_promoter_actual_effect <- absmax(mut_promoter_actual$diff) 
-  mut_promoter_sim_effect <- apply(mut_sim_effect_table, 1, absmax)
-  p_value <- sum(abs(mut_promoter_sim_effect) >= abs(mut_promoter_actual_effect))/n_run
+  mut_promoter_actual_effect <- absmax(mut_promoter_actual$diff)
+  n_mutations_actual <- nrow(mut_promoter_actual)
+  
+  # a subset of all possible promoter mutations with less effect than actually observed
+  data_promoter_less_than_actual <- data_promoter_mutation_prediction %>%
+    filter(abs(diff) < abs(mut_promoter_actual_effect))
+  p_value <- 1 - sum(data_promoter_less_than_actual$cond_tri_mut_rate)^n_mutations_actual
+  
+  mut_effect[promoter_ex] <- mut_promoter_actual_effect
   p_value_list[promoter_ex] <- p_value
   
-  print(mut_promoter_actual)
   print(mut_promoter_actual_effect)
   print(p_value)
 }
 
-# setwd(output.path)
-# write.table(p_value_list, "p_value_list_promoter_variable_savemem.txt", row.names = F, col.names = F)
+t3 <- proc.time()
+print(t3 - t2)
 
+setwd(output.path)
+write.table(p_value_list, paste0("p_value_promoter_", filename_table_12mer),
+            row.names = F, col.names = F)
+
+write.table(mut_effect, paste0("mut_effect_promoter_", filename_table_12mer),
+            row.names = F, col.names = F)

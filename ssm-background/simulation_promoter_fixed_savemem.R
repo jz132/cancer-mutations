@@ -55,7 +55,7 @@ n_run <- 10^2
 promoters_w_mutation <- which(data_promoters_mutated$count > 0)
 p_value_list <- rep(1, nrow(data_promoters_mutated))
 
-for(promoter_ex in promoters_w_mutation[1:100]){
+for(promoter_ex in promoters_w_mutation){
   print(promoter_ex)
   
   ## Part 1: Generate all possible single mutations for promoters with mutations ##
@@ -103,12 +103,10 @@ for(promoter_ex in promoters_w_mutation[1:100]){
   vec_tri <- reverseMerge(trinucleotideFrequency(seq_promoters_refseq[promoter_ex]))
   n_tri <- length(vec_tri)
   
-  # first random sampling from a binomial distribution for the number of mutated trinucleotide
-  n_mut_sim <- matrix(0, nrow = n_run, ncol = n_tri)
+  # first random sampling from a multinomial distribution for 
+  # the number of mutated trinucleotide, controlling the same number of mutations as real patients
+  n_mut_sim <- t(rmultinom(n_run, data_promoters_mutated$count[promoter_ex], vec_tri*tri_mut_rate))
   colnames(n_mut_sim) <- names(vec_tri)
-  for(j in 1:ncol(n_mut_sim)){
-    n_mut_sim[,j] <- rbinom(n_run, vec_tri[j]*num_donors, tri_mut_rate[j])
-  }
   
   # then random sampling from a multinomial distribution for 
   # each trinucleotide to trinucleotide mutation
@@ -161,11 +159,8 @@ for(promoter_ex in promoters_w_mutation[1:100]){
   p_value <- sum(abs(mut_promoter_sim_effect) >= abs(mut_promoter_actual_effect))/n_run
   p_value_list[promoter_ex] <- p_value
   
-  print(mut_promoter_actual)
-  print(mut_promoter_actual_effect)
   print(p_value)
 }
 
 # setwd(output.path)
-# write.table(p_value_list, "p_value_list_promoter_variable_savemem.txt", row.names = F, col.names = F)
-
+# write.table(p_value_list, "p_value_list_promoter_fixed_savemem.txt", row.names = F, col.names = F)
