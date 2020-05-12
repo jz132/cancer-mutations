@@ -1,10 +1,5 @@
-t0 <- proc.time()
-
 source("~/r_projects/cancer-mutations/ssm-background/trinucleotide_bg_promoter.R")
 rm(list = ls(pattern = "^data_icgc")) # free some space
-
-t1 <- proc.time()
-print(t1 - t0)
 
 options(tibble.width = Inf)
 slice <- dplyr::slice
@@ -53,9 +48,6 @@ promoters_w_mutation <- which(data_promoters_mutated$count > 0)
 mut_effect <- rep(0, nrow(data_promoters_mutated))
 p_value_list <- rep(1, nrow(data_promoters_mutated))
 
-t2 <- proc.time()
-print(t2 - t1)
-
 for(promoter_ex in promoters_w_mutation){
   print(promoter_ex)
   
@@ -63,32 +55,32 @@ for(promoter_ex in promoters_w_mutation){
   # get the location and sequence of the promoter
   data_promoter_ex <- data_promoters_refseq %>% slice(promoter_ex) # the promoter location
   seq_promoter_ex <- seq_promoters_refseq[[promoter_ex]] # the promoter sequence
+  seq_promoter_ex_bg <- getSeq(genome, data_promoter_ex$chromosome, 
+                               data_promoter_ex$start - 5, 
+                               data_promoter_ex$end + 5) # the promoter sequence including 5bp context
+  seq_promoter_ex_11mer <- DNAStringSet(seq_promoter_ex_bg, 
+                                        start = 1:(length(seq_promoter_ex_bg)-10),
+                                        width = 11) # cut the promoter into 11mers
   
-  # generate all possible mutations and store in a vcf format table
-  data_promoter_mutation_ex_vcf <- tibble(
+  # generate all possible single mutations
+  data_promoter_all_possible_mutations <- tibble(
     chromosome = data_promoter_ex$chromosome,
     pos = seq(data_promoter_ex$start, data_promoter_ex$end),
-    promoter = promoter_ex
+    promoter = promoter_ex,
+    seq_mut_bg = as.character(seq_promoter_ex_11mer)
   ) %>% 
     mutate(ref = unlist(strsplit(as.character(seq_promoter_ex), ""))) %>% 
     slice(rep(seq(1, length(seq_promoter_ex)), each = 4)) %>% 
     mutate(mut = rep(c("A", "C", "G", "T"), length(seq_promoter_ex))) %>% 
-    filter(ref != mut)
-  
-  # get the 11-mer mutation context for all synthetic mutations
-  seq_promoter_mutation_sim <- getSeq(genome,
-                                      names = data_promoter_mutation_ex_vcf$chromosome, 
-                                      start = data_promoter_mutation_ex_vcf$pos - 5,
-                                      end = data_promoter_mutation_ex_vcf$pos + 5)
+    filter(ref != mut) %>% 
+    mutate(twimer = paste0(seq_mut_bg, mut)) %>%
+    mutate(idx = DNAToBin(twimer)) %>%
+    mutate(idx = strtoi(idx, base = 2)) %>%
+    select(-seq_mut_bg)
   
   ## Part 2: Predict the effect of the synthetic mutations using QBiC ##
-  data_promoter_mutation_sim <- data_promoter_mutation_ex_vcf %>% 
-    mutate(twimer = paste0(seq_promoter_mutation_sim, mut)) %>%
-    mutate(idx = DNAToBin(twimer)) %>%
-    mutate(idx = strtoi(idx, base = 2))
-  
   # use the 12-mer table to predict the effect
-  data_promoter_mutation_prediction <- data_promoter_mutation_sim %>% 
+  data_promoter_mutation_prediction <- data_promoter_all_possible_mutations %>% 
     mutate(diff = table_12mer$diff[idx+1]) %>%
     mutate(ref_tri = substr(twimer, 5, 7)) %>%
     mutate(mut_tri = paste0(substr(ref_tri, 1, 1), mut, substr(ref_tri, 3, 3))) %>% 
@@ -97,19 +89,21 @@ for(promoter_ex in promoters_w_mutation){
     mutate(ref_tri = ifelse(ref_tri < ref_tri_rev, ref_tri, ref_tri_rev),
            mut_tri = ifelse(ref_tri < ref_tri_rev, mut_tri, mut_tri_rev)) %>% 
     select(-c(ref_tri_rev, mut_tri_rev))  %>% 
-    inner_join(table_mutation_tri_mut_rate) %>% 
+    inner_join(table_mutation_tri_mut_rate, by = c("ref_tri", "mut_tri")) %>% 
     mutate(cond_tri_mut_rate = tri_mut_rate/sum(tri_mut_rate))
   
-  # mutation effect prediction for the actual data
+  # mutation effect prediction for the actual mutations in the promoter
   mut_promoter_actual <- mut_promoter %>% 
-    genome_inner_join(data_promoter_ex) %>%
+    genome_inner_join(data_promoter_ex,
+                      by = c("chromosome", "start", "end")) %>%
     select(chromosome = chromosome.x,
            pos = start.x,
            icgc_mutation_id,
            icgc_donor_id,
            ref,
            mut) %>%
-    inner_join(data_promoter_mutation_prediction)
+    inner_join(data_promoter_mutation_prediction,
+               by = c("chromosome", "pos", "ref", "mut"))
   
   mut_promoter_actual_effect <- absmax(mut_promoter_actual$diff)
   n_mutations_actual <- nrow(mut_promoter_actual)
@@ -125,9 +119,6 @@ for(promoter_ex in promoters_w_mutation){
   print(mut_promoter_actual_effect)
   print(p_value)
 }
-
-t3 <- proc.time()
-print(t3 - t2)
 
 setwd(output.path)
 write.table(p_value_list, paste0("p_value_promoter_", filename_table_12mer),

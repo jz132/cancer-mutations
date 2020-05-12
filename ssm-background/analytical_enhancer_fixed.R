@@ -55,32 +55,32 @@ for(enhancer_ex in enhancers_w_mutation){
   # get the location and sequence of the enhancer
   data_enhancer_ex <- data_enhancers_fantom %>% slice(enhancer_ex) # the enhancer location
   seq_enhancer_ex <- seq_enhancers_fantom[[enhancer_ex]] # the enhancer sequence
+  seq_enhancer_ex_bg <- getSeq(genome, data_enhancer_ex$chromosome, 
+                               data_enhancer_ex$start - 5, 
+                               data_enhancer_ex$end + 5) # the enhancer sequence including 5bp context
+  seq_enhancer_ex_11mer <- DNAStringSet(seq_enhancer_ex_bg, 
+                                        start = 1:(length(seq_enhancer_ex_bg)-10),
+                                        width = 11) # cut the enhancer into 11mers
   
-  # generate all possible mutations and store in a vcf format table
-  data_enhancer_mutation_ex_vcf <- tibble(
+  # generate all possible single mutations
+  data_enhancer_all_possible_mutations <- tibble(
     chromosome = data_enhancer_ex$chromosome,
     pos = seq(data_enhancer_ex$start, data_enhancer_ex$end),
-    enhancer = enhancer_ex
+    enhancer = enhancer_ex,
+    seq_mut_bg = as.character(seq_enhancer_ex_11mer)
   ) %>% 
     mutate(ref = unlist(strsplit(as.character(seq_enhancer_ex), ""))) %>% 
     slice(rep(seq(1, length(seq_enhancer_ex)), each = 4)) %>% 
     mutate(mut = rep(c("A", "C", "G", "T"), length(seq_enhancer_ex))) %>% 
-    filter(ref != mut)
-  
-  # get the 11-mer mutation context for all synthetic mutations
-  seq_enhancer_mutation_sim <- getSeq(genome,
-                                      names = data_enhancer_mutation_ex_vcf$chromosome, 
-                                      start = data_enhancer_mutation_ex_vcf$pos - 5,
-                                      end = data_enhancer_mutation_ex_vcf$pos + 5)
+    filter(ref != mut) %>% 
+    mutate(twimer = paste0(seq_mut_bg, mut)) %>%
+    mutate(idx = DNAToBin(twimer)) %>%
+    mutate(idx = strtoi(idx, base = 2)) %>%
+    select(-seq_mut_bg)
   
   ## Part 2: Predict the effect of the synthetic mutations using QBiC ##
-  data_enhancer_mutation_sim <- data_enhancer_mutation_ex_vcf %>% 
-    mutate(twimer = paste0(seq_enhancer_mutation_sim, mut)) %>%
-    mutate(idx = DNAToBin(twimer)) %>%
-    mutate(idx = strtoi(idx, base = 2))
-  
   # use the 12-mer table to predict the effect
-  data_enhancer_mutation_prediction <- data_enhancer_mutation_sim %>% 
+  data_enhancer_mutation_prediction <- data_enhancer_all_possible_mutations %>% 
     mutate(diff = table_12mer$diff[idx+1]) %>%
     mutate(ref_tri = substr(twimer, 5, 7)) %>%
     mutate(mut_tri = paste0(substr(ref_tri, 1, 1), mut, substr(ref_tri, 3, 3))) %>% 
@@ -89,19 +89,21 @@ for(enhancer_ex in enhancers_w_mutation){
     mutate(ref_tri = ifelse(ref_tri < ref_tri_rev, ref_tri, ref_tri_rev),
            mut_tri = ifelse(ref_tri < ref_tri_rev, mut_tri, mut_tri_rev)) %>% 
     select(-c(ref_tri_rev, mut_tri_rev))  %>% 
-    inner_join(table_mutation_tri_mut_rate) %>% 
+    inner_join(table_mutation_tri_mut_rate, by = c("ref_tri", "mut_tri")) %>% 
     mutate(cond_tri_mut_rate = tri_mut_rate/sum(tri_mut_rate))
   
-  # mutation effect prediction for the actual data
+  # mutation effect prediction for the actual mutations in the enhancer
   mut_enhancer_actual <- mut_enhancer %>% 
-    genome_inner_join(data_enhancer_ex) %>%
+    genome_inner_join(data_enhancer_ex,
+                      by = c("chromosome", "start", "end")) %>%
     select(chromosome = chromosome.x,
            pos = start.x,
            icgc_mutation_id,
            icgc_donor_id,
            ref,
            mut) %>%
-    inner_join(data_enhancer_mutation_prediction)
+    inner_join(data_enhancer_mutation_prediction,
+               by = c("chromosome", "pos", "ref", "mut"))
   
   mut_enhancer_actual_effect <- absmax(mut_enhancer_actual$diff)
   n_mutations_actual <- nrow(mut_enhancer_actual)
