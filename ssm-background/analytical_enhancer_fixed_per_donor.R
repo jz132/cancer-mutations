@@ -45,10 +45,10 @@ table_mutation_tri_mut_rate <- table_mutation_tri %>%
   mutate(mut_type = row_number())
 
 enhancers_w_mutation <- which(data_enhancers_mutated$count > 0)
-mut_effect <- rep(0, nrow(data_enhancers_mutated))
-p_value_list <- rep(1, nrow(data_enhancers_mutated))
 
-for(enhancer_ex in enhancers_w_mutation){
+result_list <- list()
+for(i in 1:length(enhancers_w_mutation)){
+  enhancer_ex <- enhancers_w_mutation[i]
   print(enhancer_ex)
   
   ## Part 1: Generate all possible single mutations for enhancers with mutations ##
@@ -81,7 +81,7 @@ for(enhancer_ex in enhancers_w_mutation){
   ## Part 2: Predict the effect of the synthetic mutations using QBiC ##
   # use the 12-mer table to predict the effect
   data_enhancer_mutation_prediction <- data_enhancer_all_possible_mutations %>% 
-    mutate(diff = table_12mer$diff[idx+1]) %>%
+    mutate(effect = table_12mer$diff[idx+1]) %>%
     mutate(ref_tri = substr(twimer, 5, 7)) %>%
     mutate(mut_tri = paste0(substr(ref_tri, 1, 1), mut, substr(ref_tri, 3, 3))) %>% 
     mutate(ref_tri_rev = as.character(reverseComplement(DNAStringSet(ref_tri))),
@@ -93,7 +93,7 @@ for(enhancer_ex in enhancers_w_mutation){
     mutate(cond_tri_mut_rate = tri_mut_rate/sum(tri_mut_rate))
   
   # mutation effect prediction for the actual mutations in the enhancer
-  mut_enhancer_actual <- mut_enhancer %>% 
+  mut_enhancer_effect_prediction <- mut_enhancer %>% 
     genome_inner_join(data_enhancer_ex,
                       by = c("chromosome", "start", "end")) %>%
     select(chromosome = chromosome.x,
@@ -103,26 +103,25 @@ for(enhancer_ex in enhancers_w_mutation){
            ref,
            mut) %>%
     inner_join(data_enhancer_mutation_prediction,
-               by = c("chromosome", "pos", "ref", "mut"))
+               by = c("chromosome", "pos", "ref", "mut")) %>%
+    mutate(p_less = 0)
   
-  mut_enhancer_actual_effect <- absmax(mut_enhancer_actual$diff)
-  n_mutations_actual <- nrow(mut_enhancer_actual)
+  for(j in 1:nrow(mut_enhancer_effect_prediction)){
+    mut_enhancer_effect_prediction$p_less[j] <- sum(
+      data_enhancer_mutation_prediction %>%
+        filter(effect < mut_enhancer_effect_prediction$effect[j]) %>%
+        pull(cond_tri_mut_rate)
+    )
+  }
   
-  # a subset of all possible enhancer mutations with less effect than actually observed
-  data_enhancer_less_than_actual <- data_enhancer_mutation_prediction %>%
-    filter(abs(diff) < abs(mut_enhancer_actual_effect))
-  p_value <- 1 - sum(data_enhancer_less_than_actual$cond_tri_mut_rate)^n_mutations_actual
+  result <- mut_enhancer_effect_prediction %>% 
+    select(icgc_mutation_id, icgc_donor_id, enhancer, effect, p_less)
   
-  mut_effect[enhancer_ex] <- mut_enhancer_actual_effect
-  p_value_list[enhancer_ex] <- p_value
-  
-  print(mut_enhancer_actual_effect)
-  print(p_value)
+  result_list[[i]] <- result
 }
 
-setwd(output.path)
-write.table(p_value_list, paste0("p_value_enhancer_", filename_table_12mer),
-            row.names = F, col.names = F)
+enhancer_result <- bind_rows(result_list)
 
-write.table(mut_effect, paste0("mut_effect_enhancer_", filename_table_12mer),
-            row.names = F, col.names = F)
+setwd(output.path)
+write.table(enhancer_result, paste0("enhancer_mutation_result_", filename_table_12mer),
+            row.names = F)
