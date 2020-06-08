@@ -7,7 +7,7 @@
 #SBATCH --mail-user=jz132@duke.edu  # Email where notifications will be sent
 #SBATCH --mail-type=FAIL
 
-#SBATCH --array=1-666%100
+#SBATCH --array=1-667%50
 
 #Your actual work goes after this line
 

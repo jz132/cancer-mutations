@@ -1,5 +1,5 @@
-source("~/r_projects/cancer-mutations/ssm-background-slurm/trinucleotide_bg_promoter-slurm.R")
-print("successfully sourced trinucleotide_bg_promoter-slurm.R")
+source("~/r_projects/cancer-mutations/ssm-background-slurm/trinucleotide_bg_enhancer-slurm.R")
+print("successfully sourced trinucleotide_bg_enhancer-slurm.R")
 
 slice <- dplyr::slice
 rename <- dplyr::rename
@@ -49,34 +49,34 @@ table_mutation_tri_mut_rate <- table_mutation_tri %>%
          tri_mut_rate) %>% 
   mutate(mut_type = row_number())
 
-promoters_w_mutation <- which(data_promoters_mutated$count > 0)
-mut_effect <- rep(0, nrow(data_promoters_mutated))
-p_value_list <- rep(1, nrow(data_promoters_mutated))
+enhancers_w_mutation <- which(data_enhancers_mutated$count > 0)
 
-for(promoter_ex in promoters_w_mutation){
-  print(promoter_ex)
+result_list <- list()
+for(i in 1:length(enhancers_w_mutation)){
+  enhancer_ex <- enhancers_w_mutation[i]
+  print(enhancer_ex)
   
-  ## Part 1: Generate all possible single mutations for promoters with mutations ##
-  # get the location and sequence of the promoter
-  data_promoter_ex <- data_promoters_refseq %>% slice(promoter_ex) # the promoter location
-  seq_promoter_ex <- seq_promoters_refseq[[promoter_ex]] # the promoter sequence
-  seq_promoter_ex_bg <- getSeq(genome, data_promoter_ex$chromosome, 
-                               data_promoter_ex$start - 5, 
-                               data_promoter_ex$end + 5) # the promoter sequence including 5bp context
-  seq_promoter_ex_11mer <- DNAStringSet(seq_promoter_ex_bg, 
-                                        start = 1:(length(seq_promoter_ex_bg)-10),
-                                        width = 11) # cut the promoter into 11mers
+  ## Part 1: Generate all possible single mutations for enhancers with mutations ##
+  # get the location and sequence of the enhancer
+  data_enhancer_ex <- data_enhancers_fantom %>% slice(enhancer_ex) # the enhancer location
+  seq_enhancer_ex <- seq_enhancers_fantom[[enhancer_ex]] # the enhancer sequence
+  seq_enhancer_ex_bg <- getSeq(genome, data_enhancer_ex$chromosome, 
+                               data_enhancer_ex$start - 5, 
+                               data_enhancer_ex$end + 5) # the enhancer sequence including 5bp context
+  seq_enhancer_ex_11mer <- DNAStringSet(seq_enhancer_ex_bg, 
+                                        start = 1:(length(seq_enhancer_ex_bg)-10),
+                                        width = 11) # cut the enhancer into 11mers
   
   # generate all possible single mutations
-  data_promoter_all_possible_mutations <- tibble(
-    chromosome = data_promoter_ex$chromosome,
-    pos = seq(data_promoter_ex$start, data_promoter_ex$end),
-    promoter = promoter_ex,
-    seq_mut_bg = as.character(seq_promoter_ex_11mer)
+  data_enhancer_all_possible_mutations <- tibble(
+    chromosome = data_enhancer_ex$chromosome,
+    pos = seq(data_enhancer_ex$start, data_enhancer_ex$end),
+    enhancer = enhancer_ex,
+    seq_mut_bg = as.character(seq_enhancer_ex_11mer)
   ) %>% 
-    mutate(ref = unlist(strsplit(as.character(seq_promoter_ex), ""))) %>% 
-    slice(rep(seq(1, length(seq_promoter_ex)), each = 4)) %>% 
-    mutate(mut = rep(c("A", "C", "G", "T"), length(seq_promoter_ex))) %>% 
+    mutate(ref = unlist(strsplit(as.character(seq_enhancer_ex), ""))) %>% 
+    slice(rep(seq(1, length(seq_enhancer_ex)), each = 4)) %>% 
+    mutate(mut = rep(c("A", "C", "G", "T"), length(seq_enhancer_ex))) %>% 
     filter(ref != mut) %>% 
     mutate(twimer = paste0(seq_mut_bg, mut)) %>%
     mutate(idx = DNAToBin(twimer)) %>%
@@ -85,8 +85,8 @@ for(promoter_ex in promoters_w_mutation){
   
   ## Part 2: Predict the effect of the synthetic mutations using QBiC ##
   # use the 12-mer table to predict the effect
-  data_promoter_mutation_prediction <- data_promoter_all_possible_mutations %>% 
-    mutate(diff = table_12mer$diff[idx+1]) %>%
+  data_enhancer_mutation_prediction <- data_enhancer_all_possible_mutations %>% 
+    mutate(effect = table_12mer$diff[idx+1]) %>%
     mutate(ref_tri = substr(twimer, 5, 7)) %>%
     mutate(mut_tri = paste0(substr(ref_tri, 1, 1), mut, substr(ref_tri, 3, 3))) %>% 
     mutate(ref_tri_rev = as.character(reverseComplement(DNAStringSet(ref_tri))),
@@ -97,9 +97,9 @@ for(promoter_ex in promoters_w_mutation){
     inner_join(table_mutation_tri_mut_rate, by = c("ref_tri", "mut_tri")) %>% 
     mutate(cond_tri_mut_rate = tri_mut_rate/sum(tri_mut_rate))
   
-  # mutation effect prediction for the actual mutations in the promoter
-  mut_promoter_actual <- mut_promoter %>% 
-    genome_inner_join(data_promoter_ex,
+  # mutation effect prediction for the actual mutations in the enhancer
+  mut_enhancer_effect_prediction <- mut_enhancer %>% 
+    genome_inner_join(data_enhancer_ex,
                       by = c("chromosome", "start", "end")) %>%
     select(chromosome = chromosome.x,
            pos = start.x,
@@ -107,27 +107,26 @@ for(promoter_ex in promoters_w_mutation){
            icgc_donor_id,
            ref,
            mut) %>%
-    inner_join(data_promoter_mutation_prediction,
-               by = c("chromosome", "pos", "ref", "mut"))
+    inner_join(data_enhancer_mutation_prediction,
+               by = c("chromosome", "pos", "ref", "mut")) %>%
+    mutate(p_less = 0)
   
-  mut_promoter_actual_effect <- absmax(mut_promoter_actual$diff)
-  n_mutations_actual <- nrow(mut_promoter_actual)
+  for(j in 1:nrow(mut_enhancer_effect_prediction)){
+    mut_enhancer_effect_prediction$p_less[j] <- sum(
+      data_enhancer_mutation_prediction %>%
+        filter(effect < mut_enhancer_effect_prediction$effect[j]) %>%
+        pull(cond_tri_mut_rate)
+    )
+  }
   
-  # a subset of all possible promoter mutations with less effect than actually observed
-  data_promoter_less_than_actual <- data_promoter_mutation_prediction %>%
-    filter(abs(diff) < abs(mut_promoter_actual_effect))
-  p_value <- 1 - sum(data_promoter_less_than_actual$cond_tri_mut_rate)^n_mutations_actual
+  result <- mut_enhancer_effect_prediction %>% 
+    select(icgc_mutation_id, icgc_donor_id, enhancer, effect, p_less)
   
-  mut_effect[promoter_ex] <- mut_promoter_actual_effect
-  p_value_list[promoter_ex] <- p_value
-  
-  # print(mut_promoter_actual_effect)
-  # print(p_value)
+  result_list[[i]] <- result
 }
 
-setwd(output.path)
-write.table(p_value_list, paste0("p_value_promoter_", filename_table_12mer),
-            row.names = F, col.names = F)
+enhancer_result <- bind_rows(result_list)
 
-write.table(mut_effect, paste0("mut_effect_promoter_", filename_table_12mer),
-            row.names = F, col.names = F)
+setwd(output.path)
+write.table(enhancer_result, paste0("enhancer_mutation_result_", filename_table_12mer),
+            row.names = F)

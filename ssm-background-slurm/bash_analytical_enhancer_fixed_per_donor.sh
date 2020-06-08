@@ -12,4 +12,4 @@
 #Your actual work goes after this line
 
 module load R/3.6.1-gcb02
-Rscript analytical_enhancer_fixed-slurm-parallel.R ${SLURM_ARRAY_TASK_ID}
+Rscript analytical_enhancer_fixed_per_donor-slurm-parallel.R ${SLURM_ARRAY_TASK_ID}

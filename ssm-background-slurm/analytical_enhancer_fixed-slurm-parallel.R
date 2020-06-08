@@ -1,8 +1,8 @@
 source("~/r_projects/cancer-mutations/ssm-background-slurm/trinucleotide_bg_enhancer-slurm.R")
-rm(list = ls(pattern = "^data_icgc")) # free some space
 print("successfully sourced trinucleotide_bg_enhancer-slurm.R")
 
 slice <- dplyr::slice
+rename <- dplyr::rename
 
 ## arguments from the bash file ##
 args <- commandArgs(trailingOnly = TRUE)
