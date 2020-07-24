@@ -183,3 +183,13 @@ ggplot(data = table_mutation_tri, mapping = aes(x = ref, y = count,
   theme(axis.text.x = element_text(angle = 45))
 dev.off()
 
+
+ggplot(data = freq_tri, aes(x = trinucleotide, y = mut_rate)) + 
+  geom_col() + 
+  ggtitle("Trinucleotide mutation rate in enhancers") + 
+  theme(plot.title = element_text(hjust = 0.5, size = 24, face = "bold")) + 
+  theme(axis.text.x = element_text(angle = 90, size = 20),
+        axis.text.y = element_text(size = 15),
+        axis.title.y = element_text(size = 20)) + 
+  labs(x = "", y = "mutation rate")
+
