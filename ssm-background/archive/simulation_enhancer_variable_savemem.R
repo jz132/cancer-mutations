@@ -55,6 +55,8 @@ n_run <- 10^2
 enhancers_w_mutation <- which(data_enhancers_mutated$count > 0)
 p_value_list <- rep(1, nrow(data_enhancers_mutated))
 
+ptm_start <- proc.time()
+
 for(enhancer_ex in enhancers_w_mutation){
   print(enhancer_ex)
   
@@ -163,6 +165,9 @@ for(enhancer_ex in enhancers_w_mutation){
   
   print(p_value)
 }
+
+ptm_end <- proc.time()
+ptm_end - ptm_start
 
 # setwd(output.path)
 # write.table(p_value_list, "p_value_list_enhancer_variable_savemem.txt", row.names = F, col.names = F)
