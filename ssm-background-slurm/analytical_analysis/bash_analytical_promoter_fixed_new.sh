@@ -12,4 +12,4 @@
 #Your actual work goes after this line
 
 module load R/3.6.1-gcb02
-Rscript analytical_promoter_fixed_new-slurm.R ${SLURM_ARRAY_TASK_ID} "PACA-CA"
+Rscript analytical_promoter_fixed_new-slurm.R ${SLURM_ARRAY_TASK_ID} "BRCA-EU"
