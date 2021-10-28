@@ -12,7 +12,7 @@ Input: <br />
 
 
   chromosome |  start |  end  |icgc_mutation_id | icgc_donor_id | ref | mut |
- ----------  |:------:|:-----:|:---------------:|:-------------:|:---:|:---:|
+ ----------  |:------:|:-----:|:---------------:|:-------------:|:---:| ---:|
        chr1  |565238  |565238 | MU886122        | DO23508       |T    | C   |  
        chr1  |569604  |569604 | MU941619        | DO23508       |G    | A   |
        chr1  |570513  |570513 | MU952816        | DO23508       |A    | G   |
@@ -21,14 +21,15 @@ Input: <br />
        chr1  |1487205 |1487205| MU76676613      | DO23508       |T    | C   |
 
   2. Expression data for the cancer mutations with the overlapping donors (from `icgc_donor_id` column) with the somatic mutations data.  
+  
 
-| icgc_donor_id|    gene_id | normalized_read_count  |         analysis_id|
-|  ----------  |:    ------:| ----------------------:| ------------------:|  
-|      DO50825 |   DYNC2LI1 |               11.654758| RK270_Cancer-rnaseq|
-|      DO45221 |       CTTN |               15.685822|  RK100_Liver-rnaseq|
-|      DO23538 |       RIC8A|                9.196332| RK131_Cancer-rnaseq|
-|      DO23545 |LOC100505835|                0.312690| RK151_Cancer-rnaseq|
-|      DO23542 |     HERPUD2|                6.738176|  RK143_Liver-rnaseq|
+ icgc_donor_id|    gene_id | normalized_read_count  |         analysis_id|
+  ----------  |:----------:|:----------------------:| ------------------:|  
+      DO50825 |   DYNC2LI1 |               11.654758| RK270_Cancer-rnaseq|
+      DO45221 |       CTTN |               15.685822|  RK100_Liver-rnaseq|
+      DO23538 |       RIC8A|                9.196332| RK131_Cancer-rnaseq|
+      DO23545 |LOC100505835|                0.312690| RK151_Cancer-rnaseq|
+      DO23542 |     HERPUD2|                6.738176|  RK143_Liver-rnaseq|
 
 Also filter out mutations inside exons
 
