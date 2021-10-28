@@ -11,17 +11,17 @@ Input: <br />
   Using LIRI-JP project from ICGC (258 donors) with ~3.5 million SNVs, `readtbl.R` outputs the necessary elements for the pipeline:
 
 
-  chromosome |  start |  end  |icgc_mutation_id | icgc_donor_id | ref | mut |
- ----------  |:------:|:-----:|:---------------:|:-------------:|:---:| ---:|
-       chr1  |565238  |565238 | MU886122        | DO23508       |T    | C   |  
-       chr1  |569604  |569604 | MU941619        | DO23508       |G    | A   |
-       chr1  |570513  |570513 | MU952816        | DO23508       |A    | G   |
-       chr1  |754535  |754535 | MU76676523      | DO23508       |G    | A   |
-       chr1  |1487203 |1487203| MU958359        | DO23508       |C    | A   |
-       chr1  |1487205 |1487205| MU76676613      | DO23508       |T    | C   |
+|  chromosome |  start |  end  |icgc_mutation_id | icgc_donor_id | ref | mut |
+| --- | --- | --- | --- | --- | --- | --- | 
+|       chr1  |565238  |565238 | MU886122        | DO23508       |T    | C   |  
+|       chr1  |569604  |569604 | MU941619        | DO23508       |G    | A   |
+|       chr1  |570513  |570513 | MU952816        | DO23508       |A    | G   |
+|       chr1  |754535  |754535 | MU76676523      | DO23508       |G    | A   |
+|       chr1  |1487203 |1487203| MU958359        | DO23508       |C    | A   |
+|       chr1  |1487205 |1487205| MU76676613      | DO23508       |T    | C   |
 
   2. Expression data for the cancer mutations with the overlapping donors (from `icgc_donor_id` column) with the somatic mutations data.  
-  
+
 
  icgc_donor_id|    gene_id | normalized_read_count  |         analysis_id|
   ----------  |:----------:|:----------------------:| ------------------:|  
