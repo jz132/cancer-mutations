@@ -25,7 +25,7 @@ datasetname <- "LIRI-JP"
 
 # SET INPUT PARAMS HERE
 outdir <- "."
-cistype <- "promoter" # "enhancer" or "promoter"
+cistype <- "enhancer" # "enhancer" or "promoter"
 process_type <- "qbic" # entropy or qbic
 
 if (process_type == "qbic"){
@@ -136,17 +136,20 @@ result_df <- lapply(seq(nrow(cis_snps)), function(i){
     cis_diff <- absmax(mut_effect_actual_snps$diff)
     n_snps <- nrow(mut_effect_actual_snps)
     
+    print(shapiro.test(cis_snps_bg_prediction$diff))$p.value
+    print(mean(cis_snps_bg_prediction$diff))
+    print(sqrt(var(cis_snps_bg_prediction$diff)))
     # plotting function for diff (optional)
-    ggplot(data.frame(x = cis_snps_bg_prediction$diff), aes(x = x)) +
-      stat_function(fun = dnorm, args = list(mean = mean(cis_snps_bg_prediction$diff),
-                                                    sd = sd(cis_snps_bg_prediction$diff)),
-                                                    size=2
-                    ) +
-      scale_x_continuous("TF binding change") +
-      geom_vline(xintercept = cis_diff) +
-      theme_classic() +
-      theme(axis.title.y = element_blank())
-    ggsave("runx_enhancer1_dist_marked.pdf")
+    # ggplot(data.frame(x = cis_snps_bg_prediction$diff), aes(x = x)) +
+    #   stat_function(fun = dnorm, args = list(mean = mean(cis_snps_bg_prediction$diff),
+    #                                                 sd = sd(cis_snps_bg_prediction$diff)),
+    #                                                 size=2
+    #                 ) +
+    #   scale_x_continuous("TF binding change") +
+    #   geom_vline(xintercept = cis_diff) +
+    #   theme_classic() +
+    #   theme(axis.title.y = element_blank())
+    # ggsave("runx_enhancer1_dist_marked.pdf")
     # (230179048 - 230177949)  / 1257
     
     # a subset of all possible cis mutations 

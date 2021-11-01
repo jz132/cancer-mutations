@@ -6,6 +6,8 @@ library(fuzzyjoin)
 library(BSgenome.Hsapiens.UCSC.hg19)
 library(Biostrings)
 
+rename <- dplyr::rename
+
 # ============ PATH INFORMATION ============ 
 setwd("/Users/vincentiusmartin/Research/CancerMutation")
 source("functions.R")

@@ -14,8 +14,8 @@ icgc_exp_outpath <- "dataset/input/icgc_exp_LIRI_JP"
 exon_path <- "dataset/input/all_exons_refseq.txt"
 
 # set chromosome order for sorting
-chrom_order<-c(paste("chr",1:22,sep=""),"chrX","chrY","chrM")
-
+chrom_order <- c(paste("chr",1:22,sep=""),"chrX","chrY","chrM")
+ 
 # ============ READ THE SNPS DATA ============ 
 # we only focus on SNPs
 icgc_mut <- fread(icgc_mut_path, select=c("chromosome","chromosome_start","chromosome_end",

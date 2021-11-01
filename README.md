@@ -1,8 +1,8 @@
 # **Cancer Mutations Pipeline**
 
-Cancer driver identification based on the quantitative prediction of the effect of mutations in regulatory elements on transcription factor (TF) binding.
+Cancer driver identification based on quantitative prediction of the effect of mutations in regulatory elements on transcription factor (TF) binding. The TF binding change predictions are done using QBiC-Pred (https://github.com/vincentiusmartin/QBiC-Pred).
 
-Input dataset (Liver Cancer-RIKEN, Japan; i.e. LIRI-JP): https://dcc.icgc.org/releases/current/Projects/LIRI-JP
+Input dataset: Liver Cancer-RIKEN, Japan; i.e. LIRI-JP, https://dcc.icgc.org/releases/current/Projects/LIRI-JP
 
 ### Filter mutation data and gene expression data
 Code: `readtbl.R` <br />
@@ -12,7 +12,7 @@ Input: <br />
 
 
 |  chromosome |  start |  end  |icgc_mutation_id | icgc_donor_id | ref | mut |
-| --- | --- | --- | --- | --- | --- | --- | 
+| --- | --- | --- | --- | --- | --- | --- |
 |       chr1  |565238  |565238 | MU886122        | DO23508       |T    | C   |  
 |       chr1  |569604  |569604 | MU941619        | DO23508       |G    | A   |
 |       chr1  |570513  |570513 | MU952816        | DO23508       |A    | G   |
@@ -24,7 +24,7 @@ Input: <br />
 
 
  icgc_donor_id|    gene_id | normalized_read_count  |         analysis_id|
-  ----------  |:----------:|:----------------------:| ------------------:|  
+| --- | --- | --- | --- |
       DO50825 |   DYNC2LI1 |               11.654758| RK270_Cancer-rnaseq|
       DO45221 |       CTTN |               15.685822|  RK100_Liver-rnaseq|
       DO23538 |       RIC8A|                9.196332| RK131_Cancer-rnaseq|

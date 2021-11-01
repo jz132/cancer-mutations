@@ -1,6 +1,34 @@
 library(tidyverse)
 library(data.table)
 setwd("/Users/vincentiusmartin/Research/CancerMutation")
+source("functions.R")
+# ============ Entropy ============ 
+
+entropy_df <- fread_sep("dataset/epdata/enhancer_entropy.csv","enhancer") %>%
+  mutate(length = end-start)
+ggplot(entropy_df, aes(x=entropy, y=length)) + 
+  xlab("Entropy") + 
+  ylab("Enhancer length") + 
+  geom_point()
+ggsave("entropy_vs_enhancer_length.pdf")
+  
+# promoter: 10.5 to 12.5
+
+z_df <- fread("dataset/combined_predictions/enhancer_muteffect.csv") %>%
+  select(chromosome,start,end,absmax_z_score) %>%
+  mutate(length = end-start,
+         abs_zscore = abs(absmax_z_score))
+ggplot(z_df, aes(x=abs_zscore, y=length)) + 
+  geom_point(size=0.5)
+
+entropy_z <- entropy_df %>% select(chromosome,start,end,entropy) %>%
+  inner_join(z_df %>% select(chromosome, start, end, abs_zscore))
+ggplot(entropy_z, aes(x=abs_zscore, y=entropy)) + 
+  geom_point(size=0.5)
+
+
+entropy_df %>% filter(length == min(length))
+entropy_df %>% filter(length == max(length))
 
 # ============ PLOT MUTATIONAL BURDEN ============ 
 promoter_snp_count <- fread("dataset/epdata/promoter_snp_count.csv") %>%

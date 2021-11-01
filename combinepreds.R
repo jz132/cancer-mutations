@@ -59,6 +59,7 @@ pbmnames <- tools::file_path_sans_ext(str_sub(allpreds[[1]], start=end_pattern_p
 maxiter <- length(allpreds[[1]])
 result_zscores <- lapply(seq(maxiter), function(i){
   
+  # might need to put mean and sd to qnorm
   mutated_effects_cis <- lapply(seq(cislen), function(cis_idx){
     return(fread_sep(allpreds[[cis_idx]][i], cistypes[cis_idx]) %>%
       inner_join(cis_df[[cis_idx]], by = c("chromosome", "start", "end")) %>%
@@ -124,6 +125,8 @@ names(z_genes_all) <- pbmnames
 z_genes_df <- bind_cols(z_genes_all)
 p_genes_df <- z_genes_df %>% mutate_all(~ 2*(1-pnorm(abs(.))))
 p_genes_adjusted_df <- apply(p_genes_df, 2, p.adjust, method = "hochberg")
+
+hist(p_genes_df$`Homo_sapiens|NA|Shen2018|MYC-MAX`)
 
 # save the z-score tables
 z_mat_all <- z_genes_df %>% 
